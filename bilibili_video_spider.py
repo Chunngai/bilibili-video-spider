@@ -5,40 +5,58 @@ import queue
 import threading
 import json
 import argparse
+import os
 
 import requests
 from bs4 import BeautifulSoup
 
 
-def validate_from_to_p_num(root_url, headers, from_p_num, to_p_num):
-    # checks if from index < to_p_num
-    if not from_p_num <= to_p_num:
-        print("bilibili-video-spider: error: FROM-P-NUM greater than to_p_num")
-        exit(1)
-
-    # checks if the p num is out of range
+def get_info(root_url, headers):
     try:
         r = requests.get(root_url, headers=headers)
         html_text = r.text
     except:
         print("bilibili-video-spider.py: error: cannot access to {}".format(root_url))
-        exit(2)
+        exit(1)
     else:
         soup = BeautifulSoup(html_text, "html.parser")
 
+        # gets the name of the video
+        title = soup.find("h1", "video-title")["title"]
+
         # finds the ul tag whose class is list-box
         ul_list_box = soup.find("ul", "list-box")
+        # calculates the p num
+        p_num = len(ul_list_box.find_all("li"))
 
-        # calculates the mex p num
-        max_p_num = len(ul_list_box.find_all("li"))
+        return title, p_num
 
-        if from_p_num <= 0:
-            print("bilibili-video-spider.py: error: FROM-P-NUM should be greater than 0")
-            exit(3)
 
-        if to_p_num > max_p_num:
-            print("bilibili-video-spider.py: error: the greatest TO-P-NUM: {}".format(max_p_num))
-            exit(4)
+def make_dir(root_dir, title):
+    dir_path = os.path.join(root_dir, title)
+
+    try:
+        os.mkdir(dir_path)
+    except FileExistsError:
+        print("bilibili-video-spider: error: {} already exists".format(dir_path))
+
+    return dir_path
+
+
+def validate_from_to_p_num(from_p_num, to_p_num, p_num):
+    # checks if from index < to_p_num
+    if not from_p_num <= to_p_num:
+        print("bilibili-video-spider: error: FROM-P-NUM greater than to_p_num")
+        exit(2)
+
+    # checks if the p num is out of range
+    if from_p_num <= 0:
+        print("bilibili-video-spider.py: error: FROM-P-NUM should be greater than 0")
+        exit(3)
+
+    if to_p_num > p_num:
+        print("bilibili-video-spider.py: error: the greatest TO-P-NUM: {}".format(p_num))
+        exit(4)
 
 
 def create_queues(from_p_num, to_p_num):
@@ -130,12 +148,13 @@ class GetUrlThread(threading.Thread):
 
 
 class DownloadThread(threading.Thread):
-    def __init__(self, name, root_url, av_num, headers, url_queue):
+    def __init__(self, name, root_url, title, headers, dir_path, url_queue):
         super(DownloadThread, self).__init__()
         self.name = name
         self.root_url = root_url
-        self.av_num = av_num
+        self.title = title
         self.headers = headers
+        self.dir_path = dir_path
         self.url_queue = url_queue
 
         self.p_num = 0
@@ -170,14 +189,14 @@ class DownloadThread(threading.Thread):
         else:
             print("saving audio and video (without sound) in p{}".format(self.p_num))
 
-            with open("av_{}_p_{}_audio.m4s".format(self.av_num, self.p_num), "wb") as f_audio:
+            with open(os.path.join(self.dir_path, "{}_p_{}_audio.m4s").format(self.title, self.p_num), "wb") as f_audio:
                 f_audio.write(r_audio.content)
 
-            with open("av_{}_p_{}_video.m4s".format(self.av_num, self.p_num), "wb") as f_video:
+            with open(os.path.join(self.dir_path, "{}_p_{}_video.m4s").format(self.title, self.p_num), "wb") as f_video:
                 f_video.write(r_video.content)
 
 
-def create_threads(root_url, av_num, headers, p_num_queue, url_queue):
+def create_threads(root_url, title, headers, dir_path, p_num_queue, url_queue):
     get_url_thread_list = []
     # threads for storing (audio url, video (without sound) url)
     for i in range(6):
@@ -187,7 +206,7 @@ def create_threads(root_url, av_num, headers, p_num_queue, url_queue):
     download_url_thread_list = []
     # threads for downloading (audio url, video (without sound) url)
     for i in range(6):
-        download_url_thread = DownloadThread("download url thread {}".format(i + 1), root_url, av_num, headers,
+        download_url_thread = DownloadThread("download url thread {}".format(i + 1), root_url, title, headers, dir_path,
                                              url_queue)
         download_url_thread_list.append(download_url_thread)
 
@@ -210,7 +229,7 @@ def join_threads(get_url_thread_list, download_url_thread_list):
         download_url_thread.join()
 
 
-def bilibili_video_spider(av_num, from_p_num, to_p_num):
+def bilibili_video_spider(av_num, from_p_num, to_p_num, root_dir):
     # generates the root url
     root_url = "https://www.bilibili.com/video/av{}".format(av_num)
 
@@ -221,10 +240,16 @@ def bilibili_video_spider(av_num, from_p_num, to_p_num):
                       'Safari/537.36'
     }
 
+    # gets basic info of the video
+    title, p_num = get_info(root_url, headers)
+
     # checks if the from index and to index is valid
-    validate_from_to_p_num(root_url, headers, from_p_num, to_p_num)
+    validate_from_to_p_num(from_p_num, to_p_num, p_num)
 
     print("ready to scratch videos from av {}".format(av_num))
+
+    # makes a dir for storing the videos
+    dir_path = make_dir(root_dir, title)
 
     # creates a queue for storing p numbers,
     # and a queue for (audio url, video (without sound) url) of each p
@@ -232,7 +257,8 @@ def bilibili_video_spider(av_num, from_p_num, to_p_num):
 
     # creates a thread for retrieving (audio url, video (without sound) url) of each p,
     # and a thread for downloading (audio url, video (without sound) url) and merging them into a video with sound
-    get_url_thread_list, download_thread_list = create_threads(root_url, av_num, headers, p_num_queue, url_queue)
+    get_url_thread_list, download_thread_list = create_threads(root_url, title, headers, dir_path, p_num_queue,
+                                                               url_queue)
 
     # starts the threads, respectively
     start_threads(get_url_thread_list, download_thread_list)
@@ -241,8 +267,18 @@ def bilibili_video_spider(av_num, from_p_num, to_p_num):
     join_threads(get_url_thread_list, download_thread_list)
 
 
+def validate_dir(input_dir_path):
+    if not os.path.exists(input_dir_path):
+        raise argparse.ArgumentTypeError("path not exists")
+    if not os.path.isdir(input_dir_path):
+        raise argparse.ArgumentTypeError("not a dir")
+
+    return input_dir_path
+
+
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description="bilibili_video_spider.py - a tool for scratching videos from bilibili")
+    parser = argparse.ArgumentParser(
+        description="bilibili_video_spider.py - a tool for scratching videos from bilibili")
 
     parser.add_argument("--av-num", "-a", action="store", required=True, type=int,
                         help="av num of the video to be scratched")
@@ -250,7 +286,9 @@ if __name__ == '__main__':
                         help="p number from which videos are to be scratched")
     parser.add_argument("--to-p-num", "-t", action="store", required=True, type=int,
                         help="p number to which videos are to be scratched")
+    parser.add_argument("--dir", "-d", action="store", default=os.getcwd(), type=validate_dir,
+                        help="directory for storing scratched videos")
 
     args = parser.parse_args()
 
-    bilibili_video_spider(args.av_num, args.from_p_num, args.to_p_num)
+    bilibili_video_spider(args.av_num, args.from_p_num, args.to_p_num, args.dir)
