@@ -44,7 +44,7 @@ def get_info(root_url, headers):
         r = requests.get(root_url, headers=headers)
         html_text = r.text
     except:
-        print("bilibili-video-spider.py: error: cannot access to {}".format(root_url))
+        print("{}cannot access to {}".format(err_msg, root_url))
         exit(1)
     else:
         soup = BeautifulSoup(html_text, "html.parser")
@@ -90,7 +90,7 @@ def log_in():
         div_qrcode_img = login_soup.find("div", "qrcode-img")
         qrcode_img_url = div_qrcode_img.img["src"].split(',')[1:][0]
     except:
-        print("bilibili-video-spider.py: error: cannot log in when scratching flv videos")
+        print("{}cannot log in when scratching flv videos".format(err_msg))
     else:
         # gets and saves the qr code for logging in
         qrcode_img = base64.urlsafe_b64decode(qrcode_img_url + '=' * (4 - len(qrcode_img_url) % 4))
@@ -119,7 +119,7 @@ def make_dir(root_dir, title):
     try:
         os.mkdir(dir_path)
     except FileExistsError:
-        print("bilibili-video-spider: error: {} already exists".format(dir_path))
+        print("{}{} already exists".format(err_msg, dir_path))
 
     return dir_path
 
@@ -127,16 +127,16 @@ def make_dir(root_dir, title):
 def validate_from_to_p_num(from_p_num, to_p_num, p_num):
     # checks if from index < to_p_num
     if not from_p_num <= to_p_num:
-        print("bilibili-video-spider: error: FROM-P-NUM greater than to_p_num")
+        print("{}FROM-P-NUM greater than to_p_num".format(err_msg))
         exit(2)
 
     # checks if the p num is out of range
     if from_p_num <= 0:
-        print("bilibili-video-spider.py: error: FROM-P-NUM should be greater than 0")
+        print("{}FROM-P-NUM should be greater than 0".format(err_msg))
         exit(3)
 
     if to_p_num > p_num:
-        print("bilibili-video-spider.py: error: the greatest TO-P-NUM: {}".format(p_num))
+        print("{}the greatest TO-P-NUM: {}".format(err_msg, p_num))
         exit(4)
 
 
@@ -470,8 +470,11 @@ def validate_dir(input_dir_path):
 if __name__ == '__main__':
     driver_lock = threading.Lock()
     p_num_scratched_lock = threading.Lock()
+
     total_p_num_to_be_scratched = 0
     p_num_scratched = 0
+
+    err_msg = "bilibili_video_spider.py: error: "
 
     parser = argparse.ArgumentParser(
         description="bilibili_video_spider.py - a tool for scratching videos from bilibili")
