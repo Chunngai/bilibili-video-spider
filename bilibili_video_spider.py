@@ -105,20 +105,6 @@ class GetUrlThread(threading.Thread):
             self.url_queue.put((self.p_num, self.audio_url, self.video_url))
 
     def get_html_text(self):
-        # # makes a headless chrome driver
-        # chrome_options = Options()
-        # chrome_options.add_argument("--headless")
-        # driver = webdriver.Chrome(options=chrome_options)
-        #
-        # # accesses the url
-        # driver.get(self.url)
-        #
-        # try:
-        #     # waits til the script containing "window.__playinfo__"
-        #     WebDriverWait(driver, 10).until(ec.presence_of_element_located((By.XPATH, "/html/head/script[3]")))
-        #     self.html_text = driver.page_source
-        # except:
-        #     print("bilibili_video_spider.py: error: cannot get html text of p {}".format(self.p_num))
         try:
             r = requests.get(self.url, headers=self.headers)
             self.html_text = r.text
@@ -143,8 +129,13 @@ class GetUrlThread(threading.Thread):
         # gets audio url and video (without sound) url
         playinfo_dict = json.loads(script_window_playinfo)
 
-        self.video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
-        self.audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
+        try:
+            # for m4s videos
+            self.video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
+            self.audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
+        except:
+            # for flv videos
+            self.video_url = playinfo_dict["data"]["durl"][0]["url"]
 
 
 class DownloadThread(threading.Thread):
@@ -179,21 +170,36 @@ class DownloadThread(threading.Thread):
                           'Safari/537.36'
         }
 
+        print("downloading audio and video (without sound) in p{}".format(self.p_num))
         try:
-            print("downloading audio and video (without sound) in p{}".format(self.p_num))
+            r_m4s_audio = ""
+            r_m4s_video = ""
+            r_flv = ""
 
-            r_audio = requests.get(self.audio_url, headers=headers)
-            r_video = requests.get(self.video_url, headers=headers)
+            if self.audio_url:
+                # for m4s videos
+                r_m4s_audio = requests.get(self.audio_url, headers=headers)
+                r_m4s_video = requests.get(self.video_url, headers=headers)
+            else:
+                # for flv videos
+                r_flv = requests.get(self.video_url, headers=headers)
         except:
             print("bilibili_video_spider.py: error: cannot download data in p{}".format(self.p_num))
         else:
             print("saving audio and video (without sound) in p{}".format(self.p_num))
 
-            with open(os.path.join(self.dir_path, "{}_p_{}_audio.m4s").format(self.title, self.p_num), "wb") as f_audio:
-                f_audio.write(r_audio.content)
-
-            with open(os.path.join(self.dir_path, "{}_p_{}_video.m4s").format(self.title, self.p_num), "wb") as f_video:
-                f_video.write(r_video.content)
+            if self.audio_url:
+                # for m4s videos
+                with open(os.path.join(self.dir_path, "{}_p{}_audio.m4s").format(self.title, self.p_num),
+                          "wb") as f_audio:
+                    f_audio.write(r_m4s_audio.content)
+                with open(os.path.join(self.dir_path, "{}_p{}_video.m4s").format(self.title, self.p_num),
+                          "wb") as f_video:
+                    f_video.write(r_m4s_video.content)
+            else:
+                # for flv videos
+                with open(os.path.join(self.dir_path, "{}_p{}.flv").format(self.title, self.p_num), "wb") as f:
+                    f.write(r_flv.content)
 
 
 def create_threads(root_url, title, headers, dir_path, p_num_queue, url_queue):
