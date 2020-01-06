@@ -47,7 +47,7 @@ def get_p_title_list(soup):
 
 def get_info(root_url, headers):
     try:
-        r = requests.get(root_url, headers=headers)
+        r = requests.get(root_url, headers=headers, timeout=60)
         html_text = r.text
     except:
         print("{}cannot access to {}".format(err_msg, root_url))
@@ -81,7 +81,7 @@ def log_in():
     capability["pageLoadStrategy"] = "none"
 
     chrome_options = Options()
-    # chrome_options.add_argument('--headless')
+    chrome_options.add_argument('--headless')
 
     driver = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
 
@@ -248,7 +248,7 @@ class GetUrlThread(threading.Thread):
         if not self.driver:
             # for m4s videos
             try:
-                r = requests.get(self.bilibili_video_a_page.p_url, headers=self.headers)
+                r = requests.get(self.bilibili_video_a_page.p_url, headers=self.headers, timeout=60)
                 self.bilibili_video_a_page.html_text = r.text
             except:
                 print("{}cannot get html text of p{}".format(err_msg, self.bilibili_video_a_page.p_num))
@@ -313,7 +313,7 @@ class DownloadThread(threading.Thread):
         while p_num_scratched < total_p_num_to_be_scratched:
             try:
                 # gets a bilibili_video_a_page obj
-                self.bilibili_video_a_page = self.url_queue.get(True, timeout=20)
+                self.bilibili_video_a_page = self.url_queue.get(True, timeout=60)
 
                 # gets audio and video content
                 self.get_audio_n_video()
@@ -335,16 +335,16 @@ class DownloadThread(threading.Thread):
                     self.bilibili_video_a_page.p_num))
 
                 self.bilibili_video_a_page.audio_content = requests.get(self.bilibili_video_a_page.audio_url,
-                                                                        headers=self.headers).content
+                                                                        headers=self.headers, timeout=60).content
                 self.bilibili_video_a_page.video_content = requests.get(self.bilibili_video_a_page.video_url,
-                                                                        headers=self.headers).content
+                                                                        headers=self.headers, timeout=60).content
             else:
                 # for flv videos
                 print("downloading video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
                                                                self.bilibili_video_a_page.p_num))
 
                 self.bilibili_video_a_page.video_content = requests.get(self.bilibili_video_a_page.video_url,
-                                                                        headers=self.headers).content
+                                                                        headers=self.headers, timeout=60).content
         except:
             print(
                 "{}cannot download data in p{}".format(err_msg, self.bilibili_video_a_page.p_num))
