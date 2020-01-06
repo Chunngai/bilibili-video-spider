@@ -17,6 +17,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
+from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
@@ -76,46 +77,55 @@ def log_in():
     login_page_url = "https://passport.bilibili.com/login"  # log in page
 
     # generates a headless chrome driver
-    chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    driver = webdriver.Chrome(options=chrome_options)
+    capability = DesiredCapabilities.CHROME
+    capability["pageLoadStrategy"] = "none"
 
-    print("getting qr code for logging in")
+    chrome_options = Options()
+    # chrome_options.add_argument('--headless')
+
+    driver = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
 
     # accesses the log in page
     driver.get(login_page_url)
-    time.sleep(2)
-
-    # gets the html test of the log in page
-    login_html_text = driver.page_source
-
-    # gets the qr code
-    login_soup = BeautifulSoup(login_html_text, "html.parser")
 
     try:
+        wait = WebDriverWait(driver, 20)
+        wait.until(ec.presence_of_element_located((By.CLASS_NAME, "qrcode-img")))
+
+        time.sleep(2)
+
+        # gets the html test of the log in page
+        login_html_text = driver.page_source
+
+        # gets the qr code
+        login_soup = BeautifulSoup(login_html_text, "html.parser")
+
         div_qrcode_img = login_soup.find("div", "qrcode-img")
         qrcode_img_url = div_qrcode_img.img["src"].split(',')[1:][0]
     except:
         print("{}cannot log in when scratching flv videos. "
               "flv videos can also be scratched, but with lower quality".format(err_msg))
-    else:
-        # gets and saves the qr code for logging in
-        qrcode_img = base64.urlsafe_b64decode(qrcode_img_url + '=' * (4 - len(qrcode_img_url) % 4))
-        with open("qrcode.png", "wb") as f:
-            f.write(qrcode_img)
+        return
 
-        # displays the qr code
-        print("scan the qr code for logging in")
-        print("flv videos can also be scratched without logging in, but with lower quality")
-        print("close the qr code after scanning")
+    print("getting qr code for logging in")
 
-        qrcode_img = mpimg.imread("qrcode.png")
-        plt.imshow(qrcode_img)
-        plt.axis(False)
-        plt.show()
+    # gets and saves the qr code for logging in
+    qrcode_img = base64.urlsafe_b64decode(qrcode_img_url + '=' * (4 - len(qrcode_img_url) % 4))
+    with open("qrcode.png", "wb") as f:
+        f.write(qrcode_img)
 
-        # removes the qr code
-        os.remove("qrcode.png")
+    # displays the qr code
+    print("scan the qr code for logging in")
+    print("flv videos can also be scratched without logging in, but with lower quality")
+    print("close the qr code after scanning")
+
+    qrcode_img = mpimg.imread("qrcode.png")
+    plt.imshow(qrcode_img)
+    plt.axis(False)
+    plt.show()
+
+    # removes the qr code
+    os.remove("qrcode.png")
 
     return driver
 
