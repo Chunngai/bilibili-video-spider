@@ -183,7 +183,7 @@ class BilibiliVideo:
         self.ext = ext
 
     def set_url(self):
-        self.url = "https://www.bilibili.com/video/av{}".format(self.av_num)
+        self.url = "https://www.bilibili.com/video/BV{}".format(self.av_num)
 
 
 class BilibiliVideoAPage(BilibiliVideo):
@@ -511,7 +511,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="bilibili_video_spider.py - a tool for scratching videos from bilibili")
 
-    parser.add_argument("--av-num", "-a", action="store", required=True, type=int,
+    parser.add_argument("--av-num", "-a", action="store", required=True,
                         help="av num of the video to be scratched")
     parser.add_argument("--from-p-num", "-f", action="store", required=True, type=int,
                         help="p number from which videos are to be scratched")
