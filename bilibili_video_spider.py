@@ -207,9 +207,12 @@ class BilibiliVideoAPage(BilibiliVideo):
         self.p_url = "{}?p={}".format(self.url, self.p_num)
 
     def set_p_title(self):
-        try:
-            self.p_title = self.p_title_list[self.p_num - 1]
-        except:
+        if self.p_num > 1:
+            try:
+                self.p_title = self.p_title_list[self.p_num - 1]
+            except:
+                self.p_title = self.video_title
+        else:
             self.p_title = self.video_title
 
 
