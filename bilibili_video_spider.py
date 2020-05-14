@@ -145,16 +145,7 @@ def make_dir(root_dir, title):
 
 
 def validate_from_to_p_num(from_p_num, to_p_num, p_num):
-    # checks if from_p_num < to_p_num
-    if not from_p_num <= to_p_num:
-        print("{}FROM-P-NUM greater than to_p_num".format(err_msg))
-        exit(2)
-
-    # checks if the p num is out of range
-    if from_p_num <= 0:
-        print("{}FROM-P-NUM should be greater than 0".format(err_msg))
-        exit(3)
-
+    # checks if the to p num is out of range
     if to_p_num > p_num:
         print("{}the greatest TO-P-NUM: {}".format(err_msg, p_num))
         exit(4)
@@ -443,7 +434,43 @@ def join_threads(get_url_thread_list, download_url_thread_list):
         download_url_thread.join()
 
 
-def bilibili_video_spider(av_num, from_p_num, to_p_num, root_dir):
+def validate_p_num(p_num):
+    p_nums = p_num.split(',')
+
+    from_p_num = 1
+    to_p_num = 1
+    if len(p_nums) == 1:
+        from_p_num = p_nums[0]
+        to_p_num = p_nums[0]
+    elif len(p_nums) == 2:
+        from_p_num = p_nums[0]
+        to_p_num = p_nums[1]
+    else:
+        print(f"{err_msg}input: 'FROM_P_NUM, TO_P_NUM'")
+        exit(5)
+
+    try:
+        from_p_num = int(from_p_num)
+        to_p_num = int(to_p_num)
+    except:
+        print(f"{err_msg}p nums should be ints")
+        exit(6)
+
+    # checks if from_p_num < to_p_num
+    if not from_p_num <= to_p_num:
+        print("{}FROM-P-NUM greater than to_p_num".format(err_msg))
+        exit(2)
+
+    if from_p_num <= 0:
+        print("{}FROM-P-NUM should be greater than 0".format(err_msg))
+        exit(3)
+
+    return from_p_num, to_p_num
+
+
+def bilibili_video_spider(av_num, p_num, root_dir):
+    from_p_num, to_p_num = validate_p_num(p_num)
+
     bilibili_video = BilibiliVideo(av_num=av_num)
 
     # generates the root url
@@ -516,13 +543,11 @@ if __name__ == '__main__':
 
     parser.add_argument("--av-num", "-a", action="store", required=True,
                         help="av num of the video to be scratched")
-    parser.add_argument("--from-p-num", "-f", action="store", required=True, type=int,
+    parser.add_argument("--p-num", "-p", action="store", default="1",
                         help="p number from which videos are to be scratched")
-    parser.add_argument("--to-p-num", "-t", action="store", required=True, type=int,
-                        help="p number to which videos are to be scratched")
     parser.add_argument("--dir", "-d", action="store", default=os.getcwd(), type=validate_dir,
                         help="directory for storing scratched videos")
 
     args = parser.parse_args()
 
-    bilibili_video_spider(args.av_num, args.from_p_num, args.to_p_num, args.dir)
+    bilibili_video_spider(args.av_num, args.p_num, args.dir)
