@@ -391,7 +391,7 @@ class DownloadThread(threading.Thread):
                                                    os.path.basename(self.mp4_file_name)))
 
         subprocess.call(
-            ["ffmpeg -y -i {} -i {} -codec copy {} &> /dev/null".format(self.video_path, self.audio_path,
+            ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
                                                                         self.mp4_file_name)],
             shell=True)
 
