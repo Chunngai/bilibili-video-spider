@@ -165,8 +165,8 @@ def create_queues(from_p_num, to_p_num):
 
 
 class BilibiliVideo:
-    def __init__(self, av_num="", total_p_num=0, video_title="", p_title_list=None, ext=""):
-        self.av_num = av_num
+    def __init__(self, bv_num="", total_p_num=0, video_title="", p_title_list=None, ext=""):
+        self.bv_num = bv_num
         self.url = ""
         self.total_p_num = total_p_num
         self.video_title = video_title
@@ -174,13 +174,16 @@ class BilibiliVideo:
         self.ext = ext
 
     def set_url(self):
-        self.url = "https://www.bilibili.com/video/BV{}".format(self.av_num)
+        if self.bv_num[:2] == "BV":
+            self.bv_num = self.bv_num[2:]
+
+        self.url = "https://www.bilibili.com/video/BV{}".format(self.bv_num)
 
 
 class BilibiliVideoAPage(BilibiliVideo):
     def __init__(self, bilibili_video, p_num=0, html_text="", audio_url="", video_url="",
                  audio_content=b'', video_content=b''):
-        super(BilibiliVideoAPage, self).__init__(bilibili_video.av_num, bilibili_video.total_p_num,
+        super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num, bilibili_video.total_p_num,
                                                  bilibili_video.video_title, bilibili_video.p_title_list,
                                                  bilibili_video.ext)
         self.url = bilibili_video.url
@@ -468,10 +471,10 @@ def validate_p_num(p_num):
     return from_p_num, to_p_num
 
 
-def bilibili_video_spider(av_num, p_num, root_dir):
+def bilibili_video_spider(bv_num, p_num, root_dir):
     from_p_num, to_p_num = validate_p_num(p_num)
 
-    bilibili_video = BilibiliVideo(av_num=av_num)
+    bilibili_video = BilibiliVideo(bv_num=bv_num)
 
     # generates the root url
     bilibili_video.set_url()
@@ -499,7 +502,7 @@ def bilibili_video_spider(av_num, p_num, root_dir):
     global total_p_num_to_be_scratched
     total_p_num_to_be_scratched = to_p_num - from_p_num + 1
 
-    print("ready to scratch videos from av{}: {}".format(bilibili_video.av_num, bilibili_video.video_title))
+    print("ready to scratch videos from bv{}: {}".format(bilibili_video.bv_num, bilibili_video.video_title))
 
     # makes a dir for storing the videos
     dir_path = make_dir(root_dir, bilibili_video.video_title)
@@ -541,8 +544,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="bilibili_video_spider.py - a tool for scratching videos from bilibili")
 
-    parser.add_argument("--av-num", "-a", action="store", required=True,
-                        help="av num of the video to be scratched")
+    parser.add_argument("--bv-num", "-b", action="store", required=True,
+                        help="bv num of the video to be scratched")
     parser.add_argument("--p-num", "-p", action="store", default="1",
                         help="p number from which videos are to be scratched")
     parser.add_argument("--dir", "-d", action="store", default=os.getcwd(), type=validate_dir,
@@ -550,4 +553,4 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    bilibili_video_spider(args.av_num, args.p_num, args.dir)
+    bilibili_video_spider(args.bv_num, args.p_num, args.dir)
