@@ -60,7 +60,6 @@ def get_info(root_url, headers):
 
         # gets the page title list of the video
         p_title_list = get_p_title_list(soup)
-
         # calculates the p num
         p_num = len(p_title_list)
 
@@ -165,19 +164,13 @@ def create_queues(from_p_num, to_p_num):
 
 
 class BilibiliVideo:
-    def __init__(self, bv_num="", total_p_num=0, video_title="", p_title_list=None, ext=""):
+    def __init__(self, bv_num, total_p_num=0, video_title="", p_title_list=None, ext=""):
         self.bv_num = bv_num
-        self.url = ""
+        self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
         self.total_p_num = total_p_num
         self.video_title = video_title
         self.p_title_list = p_title_list
         self.ext = ext
-
-    def set_url(self):
-        if self.bv_num[:2] == "BV":
-            self.bv_num = self.bv_num[2:]
-
-        self.url = "https://www.bilibili.com/video/BV{}".format(self.bv_num)
 
 
 class BilibiliVideoAPage(BilibiliVideo):
@@ -472,12 +465,10 @@ def validate_p_num(p_num):
 
 
 def bilibili_video_spider(bv_num, p_num, root_dir):
+    # Validates if the from p num and to p num are valid.
     from_p_num, to_p_num = validate_p_num(p_num)
 
     bilibili_video = BilibiliVideo(bv_num=bv_num)
-
-    # generates the root url
-    bilibili_video.set_url()
 
     # generates the headers
     headers = {
