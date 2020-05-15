@@ -158,31 +158,82 @@ class BilibiliVideoAPage(BilibiliVideo):
         self.p_url = f"{self.url}?p={self.p_num}"
         self.p_title = self.p_title_list[self.p_num - 1] if self.total_p_num > 1 else self.video_title
 
-        self.html_text = ''
+        self.audio_url, self.video_url = BilibiliVideoAPage._get_audio_video_url(self.p_url, self.p_num)
 
-        self.audio_url = ''  # makes sense only for m4s videos
-        self.video_url = ''  # originally without sound for m4s videos
-        self.audio_content = b''  # makes sense only for m4s videos
-        self.video_content = b''  # originally without sound for m4s videos
 
-    # def set_p_title(self):
-    #     if self.p_num > 1:
-    #         try:
-    #             self.p_title = self.p_title_list[self.p_num - 1]
-    #         except:
-    #             self.p_title = self.video_title
-    #     else:
-    #         self.p_title = self.video_title
+    @classmethod
+    def _get_html_text(cls, p_url, p_num):
+        if not driver:
+            # for m4s videos
+            try:
+                r = requests.get(p_url, headers=headers, timeout=60)
+                return r.text
+            except:
+                print("{}cannot get html text of p{}".format(err_msg, p_num))
+        else:
+            # for flv videos
+            try:
+                driver_lock.acquire()
+                driver.get(p_url)
+
+                WebDriverWait(driver, 10).until(ec.presence_of_element_located((By.XPATH, "/html/head/script[3]")))
+                return driver.page_source
+            except:
+                print("{}cannot get html text of p{}".format(err_msg, p_num))
+            finally:
+                driver_lock.release()
+
+    @classmethod
+    def _get_script_window_playinfo(cls, soup):
+        script_list = soup.find_all("script")
+        script_window_playinfo = ""
+        for script in script_list:
+            try:
+                if "window.__playinfo__" in script.string:
+                    script_window_playinfo = script.string[20:]
+            except:
+                pass
+
+        return script_window_playinfo
+
+    @classmethod
+    def _get_audio_video_url(cls, p_url, p_num):
+        html_text = BilibiliVideoAPage._get_html_text(p_url, p_num)
+        if not html_text:
+            return
+
+        soup = BeautifulSoup(html_text, "html.parser")
+        # retrieves the script tag containing needed download urls
+        script_window_playinfo = BilibiliVideoAPage._get_script_window_playinfo(soup)
+
+        audio_url = b''
+        video_url = b''
+        try:
+            # gets audio url and video url
+            playinfo_dict = json.loads(script_window_playinfo)
+        except:
+            print("{}cannot get <script> with needed urls for p{}".format(err_msg, p_num))
+        else:
+            try:
+                # for m4s videos
+                video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
+                audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
+            except KeyError:
+                # for flv videos
+                video_url = playinfo_dict["data"]["durl"][0]["url"]
+            except:
+                print(
+                    "{}cannot get download url for p{}".format(err_msg, p_num))
+
+        return audio_url, video_url
 
 
 class GetUrlThread(threading.Thread):
-    def __init__(self, thread_name, headers, driver, bilibili_video, p_num_queue, url_queue):
+    def __init__(self, thread_name, bilibili_video, p_num_queue, url_queue):
         super(GetUrlThread, self).__init__()
         self.bilibili_video = bilibili_video
         self.bilibili_video_a_page = None
 
-        self.headers = headers
-        self.driver = driver
         self.thread_name = thread_name
         self.p_num_queue = p_num_queue
         self.url_queue = url_queue
@@ -194,66 +245,8 @@ class GetUrlThread(threading.Thread):
 
             self.bilibili_video_a_page = BilibiliVideoAPage(self.bilibili_video, p_num)
 
-            # gets the html text
-            self.get_html_text()
-
-            if self.bilibili_video_a_page.html_text:
-                # gets urls of the audio (for m4s) and video
-                self.get_audio_video_url()
-
-                # puts bilibili_video_a_page into the queue
-                self.url_queue.put(self.bilibili_video_a_page)
-
-    def get_html_text(self):
-        if not self.driver:
-            # for m4s videos
-            try:
-                r = requests.get(self.bilibili_video_a_page.p_url, headers=self.headers, timeout=60)
-                self.bilibili_video_a_page.html_text = r.text
-            except:
-                print("{}cannot get html text of p{}".format(err_msg, self.bilibili_video_a_page.p_num))
-        else:
-            # for flv videos
-            try:
-                driver_lock.acquire()
-                self.driver.get(self.bilibili_video_a_page.p_url)
-
-                WebDriverWait(self.driver, 10).until(ec.presence_of_element_located((By.XPATH, "/html/head/script[3]")))
-                self.bilibili_video_a_page.html_text = self.driver.page_source
-            except:
-                print("{}cannot get html text of p{}".format(err_msg, self.bilibili_video_a_page.p_num))
-            finally:
-                driver_lock.release()
-
-    def get_audio_video_url(self):
-        soup = BeautifulSoup(self.bilibili_video_a_page.html_text, "html.parser")
-
-        # retrieves the script tag containing needed download urls
-        script_list = soup.find_all("script")
-        script_window_playinfo = ""
-        for script in script_list:
-            try:
-                if "window.__playinfo__" in script.string:
-                    script_window_playinfo = script.string[20:]
-            except:
-                pass
-
-        try:
-            # gets audio url and video url
-            playinfo_dict = json.loads(script_window_playinfo)
-        except:
-            print("{}cannot get <script> with needed urls for p{}".format(err_msg, self.bilibili_video_a_page.p_num))
-        else:
-            try:
-                # for m4s videos
-                self.bilibili_video_a_page.video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
-                self.bilibili_video_a_page.audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
-            except KeyError:
-                # for flv videos
-                self.bilibili_video_a_page.video_url = playinfo_dict["data"]["durl"][0]["url"]
-            except:
-                print(
-                    "{}cannot get download url for p{}".format(err_msg, self.bilibili_video_a_page.p_num))
+            # puts bilibili_video_a_page into the queue
+            self.url_queue.put(self.bilibili_video_a_page)
 
 
 class DownloadThread(threading.Thread):
@@ -268,6 +261,9 @@ class DownloadThread(threading.Thread):
         self.audio_path = ""  # makes sense only for m4s files
         self.video_path = ""
         self.mp4_file_name = ""  # mp4 files generated by combining the audio and video m4s files
+
+        self.audio_content = b''  # makes sense only for m4s videos
+        self.video_content = b''  # originally without sound for m4s videos
 
     def run(self):
         while p_num_scratched < total_p_num_to_be_scratched:
@@ -379,11 +375,11 @@ def create_queues(from_p_num, to_p_num):
     return p_num_queue, url_queue
 
 
-def create_threads(headers, dir_path, driver, bilibili_video, p_num_queue, url_queue):
+def create_threads(headers, dir_path, bilibili_video, p_num_queue, url_queue):
     get_url_thread_list = []
     # threads for storing bilibili_video_a_page objs
     for i in range(6):
-        get_url_thread = GetUrlThread("get url thread {}".format(i + 1), headers, driver, bilibili_video,
+        get_url_thread = GetUrlThread("get url thread {}".format(i + 1), bilibili_video,
                                       p_num_queue,
                                       url_queue)
         get_url_thread_list.append(get_url_thread)
@@ -463,6 +459,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     }
 
     # simulates logging in if the videos are flv
+    global driver
     if bilibili_video.ext == "flv":
         driver = log_in()
     else:
@@ -484,7 +481,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     p_num_queue, url_queue = create_queues(from_p_num, to_p_num)
     # creates a thread for retrieving bilibili_video_a_page objs,
     # and a thread for downloading and saving videos
-    get_url_thread_list, download_thread_list = create_threads(headers, dir_path, driver, bilibili_video, p_num_queue,
+    get_url_thread_list, download_thread_list = create_threads(headers, dir_path, bilibili_video, p_num_queue,
                                                                url_queue)
     # starts the threads, respectively
     start_threads(get_url_thread_list, download_thread_list)
@@ -506,6 +503,7 @@ if __name__ == '__main__':
     p_num_scratched_lock = threading.Lock()
 
     headers = None
+    driver = None
 
     total_p_num_to_be_scratched = 0
     p_num_scratched = 0
