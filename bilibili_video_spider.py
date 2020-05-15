@@ -22,29 +22,6 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 
 
-def get_p_title_list(soup):
-    # finds the script tag containing all p titles
-    script_list = soup.find_all("script")
-    window_initial_state = ""
-    for script in script_list:
-        try:
-            if "window.__INITIAL_STATE__={" in script.string:
-                window_initial_state = script.string[25:]
-        except:
-            pass
-
-    try:
-        # retrieves all p titles
-        raw_page_list = json.loads(window_initial_state.split(";(function()")[0])["videoData"]["pages"]
-        p_title_list = [raw_page["part"] for raw_page in raw_page_list]
-
-        return p_title_list
-    except:
-        print("{}cannot get p title list. title of the video will be used instead".format(err_msg))
-
-        return []
-
-
 def log_in():
     login_page_url = "https://passport.bilibili.com/login"  # log in page
 
@@ -116,32 +93,35 @@ def make_dir(root_dir, title):
     return dir_path
 
 
-def validate_from_to_p_num(from_p_num, to_p_num, p_num):
-    # checks if the to p num is out of range
-    if to_p_num > p_num:
-        print("{}the greatest TO-P-NUM: {}".format(err_msg, p_num))
-        exit(4)
-
-
-def create_queues(from_p_num, to_p_num):
-    # creates a queue for storing p numbers
-    p_num_queue = queue.Queue()
-    # puts p numbers into the queue
-    for p_num in range(from_p_num, to_p_num + 1):
-        p_num_queue.put(p_num)
-
-    # creates a queue for storing (audio url, video url) of each video
-    url_queue = queue.Queue()
-
-    return p_num_queue, url_queue
-
-
 class BilibiliVideo:
     def __init__(self, bv_num):
         self.bv_num = bv_num
         self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
         self.video_title, self.p_title_list, self.ext = BilibiliVideo._get_info(self.url)
         self.total_p_num = len(self.p_title_list)
+
+    @classmethod
+    def get_p_title_list(cls, soup):
+        # finds the script tag containing all p titles
+        script_list = soup.find_all("script")
+        window_initial_state = ""
+        for script in script_list:
+            try:
+                if "window.__INITIAL_STATE__={" in script.string:
+                    window_initial_state = script.string[25:]
+            except:
+                pass
+
+        try:
+            # retrieves all p titles
+            raw_page_list = json.loads(window_initial_state.split(";(function()")[0])["videoData"]["pages"]
+            p_title_list = [raw_page["part"] for raw_page in raw_page_list]
+
+            return p_title_list
+        except:
+            print("{}cannot get p title list. title of the video will be used instead".format(err_msg))
+
+            return []
 
     @classmethod
     def _get_info(cls, root_url):
@@ -158,7 +138,7 @@ class BilibiliVideo:
             video_title = soup.find("h1", "video-title")["title"]
 
             # gets the page title list of the video
-            p_title_list = get_p_title_list(soup)
+            p_title_list = BilibiliVideo.get_p_title_list(soup)
 
             # checks if the videos are m4s or flv
             if "m4s?" in html_text:
@@ -170,53 +150,49 @@ class BilibiliVideo:
 
 
 class BilibiliVideoAPage(BilibiliVideo):
-    def __init__(self, bilibili_video, p_num=0, html_text="", audio_url="", video_url="",
-                 audio_content=b'', video_content=b''):
+    def __init__(self, bilibili_video, p_num):
         super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num)
         self.url = bilibili_video.url
-
         self.p_num = p_num
-        self.p_url = ""
-        self.p_title = ""
-        self.html_text = html_text
-        self.audio_url = audio_url  # makes sense only for m4s videos
-        self.video_url = video_url  # originally without sound for m4s videos
-        self.audio_content = audio_content  # makes sense only for m4s videos
-        self.video_content = video_content  # originally without sound for m4s videos
 
-    def set_p_url(self):
-        self.p_url = "{}?p={}".format(self.url, self.p_num)
+        self.p_url = f"{self.url}?p={self.p_num}"
+        self.p_title = self.p_title_list[self.p_num - 1] if self.total_p_num > 1 else self.video_title
 
-    def set_p_title(self):
-        if self.p_num > 1:
-            try:
-                self.p_title = self.p_title_list[self.p_num - 1]
-            except:
-                self.p_title = self.video_title
-        else:
-            self.p_title = self.video_title
+        self.html_text = ''
+
+        self.audio_url = ''  # makes sense only for m4s videos
+        self.video_url = ''  # originally without sound for m4s videos
+        self.audio_content = b''  # makes sense only for m4s videos
+        self.video_content = b''  # originally without sound for m4s videos
+
+    # def set_p_title(self):
+    #     if self.p_num > 1:
+    #         try:
+    #             self.p_title = self.p_title_list[self.p_num - 1]
+    #         except:
+    #             self.p_title = self.video_title
+    #     else:
+    #         self.p_title = self.video_title
 
 
 class GetUrlThread(threading.Thread):
     def __init__(self, thread_name, headers, driver, bilibili_video, p_num_queue, url_queue):
         super(GetUrlThread, self).__init__()
-        self.bilibili_video_a_page = BilibiliVideoAPage(bilibili_video)
+        self.bilibili_video = bilibili_video
+        self.bilibili_video_a_page = None
 
-        self.thread_name = thread_name
         self.headers = headers
         self.driver = driver
+        self.thread_name = thread_name
         self.p_num_queue = p_num_queue
         self.url_queue = url_queue
 
     def run(self):
         while not self.p_num_queue.empty():
             # gets a p num
-            self.bilibili_video_a_page.p_num = self.p_num_queue.get()
+            p_num = self.p_num_queue.get()
 
-            # generates the url of the p
-            self.bilibili_video_a_page.set_p_url()
-            # sets the p title
-            self.bilibili_video_a_page.set_p_title()
+            self.bilibili_video_a_page = BilibiliVideoAPage(self.bilibili_video, p_num)
 
             # gets the html text
             self.get_html_text()
@@ -390,6 +366,19 @@ class DownloadThread(threading.Thread):
         os.remove(self.video_path)
 
 
+def create_queues(from_p_num, to_p_num):
+    # creates a queue for storing p numbers
+    p_num_queue = queue.Queue()
+    # puts p numbers into the queue
+    for p_num in range(from_p_num, to_p_num + 1):
+        p_num_queue.put(p_num)
+
+    # creates a queue for storing (audio url, video url) of each video
+    url_queue = queue.Queue()
+
+    return p_num_queue, url_queue
+
+
 def create_threads(headers, dir_path, driver, bilibili_video, p_num_queue, url_queue):
     get_url_thread_list = []
     # threads for storing bilibili_video_a_page objs
@@ -424,7 +413,7 @@ def join_threads(get_url_thread_list, download_url_thread_list):
         download_url_thread.join()
 
 
-def validate_p_num(p_num):
+def validate_p_num(p_num, total_p_num):
     p_nums = p_num.split(',')
 
     from_p_num = 1
@@ -450,18 +439,19 @@ def validate_p_num(p_num):
     if not from_p_num <= to_p_num:
         print("{}FROM-P-NUM greater than to_p_num".format(err_msg))
         exit(2)
-
+    # checks if from_p_num is greater than 0
     if from_p_num <= 0:
         print("{}FROM-P-NUM should be greater than 0".format(err_msg))
         exit(3)
+    # checks if the to p num is out of range
+    if to_p_num > total_p_num:
+        print("{}the greatest TO-P-NUM: {}".format(err_msg, total_p_num))
+        exit(4)
 
     return from_p_num, to_p_num
 
 
 def bilibili_video_spider(bv_num, p_num, root_dir):
-    # Validates if the from p num and to p num are valid.
-    from_p_num, to_p_num = validate_p_num(p_num)
-
     bilibili_video = BilibiliVideo(bv_num=bv_num)
 
     # generates the headers
@@ -478,8 +468,8 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     else:
         driver = None
 
-    # checks if the from index and to index is valid
-    validate_from_to_p_num(from_p_num, to_p_num, bilibili_video.total_p_num)
+    # Validates if the from p num and to p num are valid.
+    from_p_num, to_p_num = validate_p_num(p_num, bilibili_video.total_p_num)
 
     global total_p_num_to_be_scratched
     total_p_num_to_be_scratched = to_p_num - from_p_num + 1
@@ -492,15 +482,12 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     # creates a queue for storing p numbers,
     # and a queue for bilibili_video_a_page objs, each of which reprs a p
     p_num_queue, url_queue = create_queues(from_p_num, to_p_num)
-
     # creates a thread for retrieving bilibili_video_a_page objs,
     # and a thread for downloading and saving videos
     get_url_thread_list, download_thread_list = create_threads(headers, dir_path, driver, bilibili_video, p_num_queue,
                                                                url_queue)
-
     # starts the threads, respectively
     start_threads(get_url_thread_list, download_thread_list)
-
     # joins the threads, respectively
     join_threads(get_url_thread_list, download_thread_list)
 
