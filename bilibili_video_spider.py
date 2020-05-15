@@ -45,33 +45,6 @@ def get_p_title_list(soup):
         return []
 
 
-def get_info(root_url, headers):
-    try:
-        r = requests.get(root_url, headers=headers, timeout=60)
-        html_text = r.text
-    except:
-        print("{}cannot access to {}".format(err_msg, root_url))
-        exit(1)
-    else:
-        soup = BeautifulSoup(html_text, "html.parser")
-
-        # gets the title of the videos
-        video_title = soup.find("h1", "video-title")["title"]
-
-        # gets the page title list of the video
-        p_title_list = get_p_title_list(soup)
-        # calculates the p num
-        p_num = len(p_title_list)
-
-        # checks if the videos are m4s or flv
-        if "m4s?" in html_text:
-            ext = "m4s"
-        else:
-            ext = "flv"
-
-        return video_title, p_title_list, p_num, ext
-
-
 def log_in():
     login_page_url = "https://passport.bilibili.com/login"  # log in page
 
@@ -164,21 +137,42 @@ def create_queues(from_p_num, to_p_num):
 
 
 class BilibiliVideo:
-    def __init__(self, bv_num, total_p_num=0, video_title="", p_title_list=None, ext=""):
+    def __init__(self, bv_num):
         self.bv_num = bv_num
         self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
-        self.total_p_num = total_p_num
-        self.video_title = video_title
-        self.p_title_list = p_title_list
-        self.ext = ext
+        self.video_title, self.p_title_list, self.ext = BilibiliVideo._get_info(self.url)
+        self.total_p_num = len(self.p_title_list)
+
+    @classmethod
+    def _get_info(cls, root_url):
+        try:
+            r = requests.get(root_url, headers=headers, timeout=60)
+            html_text = r.text
+        except:
+            print("{}cannot access to {}".format(err_msg, root_url))
+            exit(1)
+        else:
+            soup = BeautifulSoup(html_text, "html.parser")
+
+            # gets the title of the videos
+            video_title = soup.find("h1", "video-title")["title"]
+
+            # gets the page title list of the video
+            p_title_list = get_p_title_list(soup)
+
+            # checks if the videos are m4s or flv
+            if "m4s?" in html_text:
+                ext = "m4s"
+            else:
+                ext = "flv"
+
+            return video_title, p_title_list, ext
 
 
 class BilibiliVideoAPage(BilibiliVideo):
     def __init__(self, bilibili_video, p_num=0, html_text="", audio_url="", video_url="",
                  audio_content=b'', video_content=b''):
-        super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num, bilibili_video.total_p_num,
-                                                 bilibili_video.video_title, bilibili_video.p_title_list,
-                                                 bilibili_video.ext)
+        super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num)
         self.url = bilibili_video.url
 
         self.p_num = p_num
@@ -388,7 +382,7 @@ class DownloadThread(threading.Thread):
 
         subprocess.call(
             ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
-                                                                        self.mp4_file_name)],
+                                                                              self.mp4_file_name)],
             shell=True)
 
         # removes tmp m4s files
@@ -471,15 +465,12 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     bilibili_video = BilibiliVideo(bv_num=bv_num)
 
     # generates the headers
+    global headers
     headers = {
         'Referer': bilibili_video.url,
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 '
                       'Safari/537.36'
     }
-
-    # gets basic info of the video
-    bilibili_video.video_title, bilibili_video.p_title_list, bilibili_video.total_p_num, bilibili_video.ext = get_info(
-        bilibili_video.url, headers)
 
     # simulates logging in if the videos are flv
     if bilibili_video.ext == "flv":
@@ -526,6 +517,8 @@ def validate_dir(input_dir_path):
 if __name__ == '__main__':
     driver_lock = threading.Lock()
     p_num_scratched_lock = threading.Lock()
+
+    headers = None
 
     total_p_num_to_be_scratched = 0
     p_num_scratched = 0
