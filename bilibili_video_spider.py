@@ -84,11 +84,11 @@ class BilibiliVideo:
     def __init__(self, bv_num):
         self.bv_num = bv_num
         self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
-        self.video_title, self.p_title_list, self.ext = BilibiliVideo._get_info(self.url)
+        self.av_num, self.cid, self.video_title, self.p_title_list, self.ext = BilibiliVideo._get_info(self.url)
         self.total_p_num = len(self.p_title_list)
 
     @classmethod
-    def get_p_title_list(cls, soup):
+    def _get_window_initial_state(cls, soup):
         # finds the script tag containing all p titles
         script_list = soup.find_all("script")
         window_initial_state = ""
@@ -99,9 +99,13 @@ class BilibiliVideo:
             except:
                 pass
 
+        return window_initial_state
+
+    @classmethod
+    def _get_p_title_list(cls, window_initial_state_dict):
         try:
             # retrieves all p titles
-            raw_page_list = json.loads(window_initial_state.split(";(function()")[0])["videoData"]["pages"]
+            raw_page_list = window_initial_state_dict["videoData"]["pages"]
             p_title_list = [raw_page["part"] for raw_page in raw_page_list]
 
             return p_title_list
@@ -120,20 +124,26 @@ class BilibiliVideo:
             exit(1)
         else:
             soup = BeautifulSoup(html_text, "html.parser")
+            # gets window_initial_state dict
+            window_initial_state = BilibiliVideo._get_window_initial_state(soup)
+            window_initial_state_dict = json.loads(window_initial_state.split(";(function()")[0])
+
+            # gets the av num
+            av_num = window_initial_state_dict["aid"]
+
+            # gets the cid
+            cid = window_initial_state_dict["videoData"]["cid"]
 
             # gets the title of the videos
             video_title = soup.find("h1", "video-title")["title"]
 
             # gets the page title list of the video
-            p_title_list = BilibiliVideo.get_p_title_list(soup)
+            p_title_list = BilibiliVideo._get_p_title_list(window_initial_state_dict)
 
-            # checks if the videos are m4s or flv
-            if "m4s?" in html_text:
-                ext = "m4s"
-            else:
-                ext = "flv"
+            # gets the ext
+            ext = "m4s" if "m4s" in html_text else "flv"
 
-            return video_title, p_title_list, ext
+            return av_num, cid, video_title, p_title_list, ext
 
 
 class BilibiliVideoAPage(BilibiliVideo):
