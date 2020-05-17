@@ -9,6 +9,7 @@ import os
 import time
 import base64
 import subprocess
+import math
 
 import requests
 from bs4 import BeautifulSoup
@@ -83,12 +84,30 @@ def log_in():
 class BilibiliVideo:
     def __init__(self, bv_num):
         self.bv_num = bv_num
+
         self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
         self.av_num, self.video_title, self.p_title_list, self.cid_list, self.ext = BilibiliVideo._get_info(self.url)
         self.total_p_num = len(self.p_title_list)
-        self.comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
 
-        print(dict(requests.get(self.comment_url).text))
+        self.comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
+        self.total_comment_page_num = BilibiliVideo._get_total_comment_page_num(self.comment_url)
+
+    @classmethod
+    def _get_total_comment_page_num(cls, comment_url):
+        try:
+            r = requests.get(comment_url)
+            r.raise_for_status()
+        except:
+            print(
+                "{}cannot get total comment page num".format(err_msg))
+        else:
+            page = json.loads(r.text)["data"]["page"]
+            size = page["size"]
+            count = page["count"]
+
+            page_num = math.ceil(count / size)
+
+            return page_num
 
     @classmethod
     def _get_window_initial_state_dict(cls, soup):
@@ -173,7 +192,7 @@ class BilibiliVideoAPage(BilibiliVideo):
         self.p_url = f"{self.url}?p={self.p_num}"
         # self.p_title = self.p_title_list[self.p_num - 1] if self.total_p_num > 1 else self.video_title
         self.p_title = self.p_title_list[self.p_num - 1]
-        self.danmaku_url = f"https://api.bilibili.com/x/v1/dm/list.so?oid={self.cid_list[p_num - 1]}";print(self.danmaku_url)
+        self.danmaku_url = f"https://api.bilibili.com/x/v1/dm/list.so?oid={self.cid_list[p_num - 1]}"
 
         self.audio_url, self.video_url = BilibiliVideoAPage._get_audio_video_url(self.p_url, self.p_num)
 
