@@ -78,6 +78,7 @@ def log_in():
         while re.compile(r"注册").search(driver.page_source):
             pass
         plt.close('all')
+
     Thread(target=close).start()
 
     plt.imshow(qrcode_img)
@@ -260,8 +261,8 @@ class BilibiliVideoAPage(BilibiliVideo):
         # retrieves the script tag containing needed download urls
         script_window_playinfo = BilibiliVideoAPage._get_script_window_playinfo(soup)
 
-        audio_url = b''
-        video_url = b''
+        audio_url = None
+        video_url = None
         try:
             # gets audio url and video url
             playinfo_dict = json.loads(script_window_playinfo)
@@ -274,7 +275,11 @@ class BilibiliVideoAPage(BilibiliVideo):
                 audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
             except KeyError:
                 # for flv videos
-                video_url = playinfo_dict["data"]["durl"][0]["url"]
+                video_url = []
+
+                for durl in playinfo_dict["data"]["durl"]:
+                    video_url.append((durl["order"], durl["url"]))
+                video_url = sorted(video_url, key=lambda elem: elem[0])
             except:
                 print(
                     "{}cannot get download url for p{}".format(err_msg, p_num))
@@ -330,8 +335,8 @@ class DownloadThread(threading.Thread):
                 break
 
     def _get_audio_n_video_content(self):
-        audio_content = b''  # makes sense only for m4s videos
-        video_content = b''  # originally without sound for m4s videos
+        audio_content = None  # makes sense only for m4s videos
+        video_content = None  # originally without sound for m4s videos
         try:
             if self.bilibili_video_a_page.audio_url:
                 # for m4s videos
@@ -348,8 +353,12 @@ class DownloadThread(threading.Thread):
                 print("downloading video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
                                                                self.bilibili_video_a_page.p_num))
 
-                video_content = requests.get(self.bilibili_video_a_page.video_url,
-                                             headers=headers, timeout=60).content
+                video_content = []
+
+                for i in range(len(self.bilibili_video_a_page.video_url)):
+                    print(self.bilibili_video_a_page.video_url[i])
+                    video_content.append(requests.get(self.bilibili_video_a_page.video_url[i][1],
+                                                      headers=headers, timeout=60).content)
         except:
             print(
                 "{}cannot download data in p{}".format(err_msg, self.bilibili_video_a_page.p_num))
