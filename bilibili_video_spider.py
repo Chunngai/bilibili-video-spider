@@ -10,6 +10,8 @@ import time
 import base64
 import subprocess
 import math
+import re
+from threading import Thread
 
 import requests
 from bs4 import BeautifulSoup
@@ -66,19 +68,36 @@ def log_in():
         f.write(qrcode_img)
 
     # displays the qr code
-    print("scan the qr code for logging in")
-    print("flv videos can also be scratched without logging in, but with lower quality")
-    print("close the qr code after scanning")
+    print("scan the qr code to log in for flv videos of higher qualities")
+    print("close the qr code window to retrieve flv videos of lower qualities without logging in")
 
     qrcode_img = mpimg.imread("qrcode.png")
+
+    # waits for logging in
+    def close():
+        while re.compile(r"注册").search(driver.page_source):
+            pass
+        plt.close('all')
+    Thread(target=close).start()
+
     plt.imshow(qrcode_img)
     plt.axis(False)
-    plt.show()
+    while plt.get_fignums():
+        plt.pause(3)
 
     # removes the qr code
     os.remove("qrcode.png")
 
     return driver
+
+
+def _make_dir(dir_path):
+    print("creating dir {} for storing videos".format(dir_path))
+
+    try:
+        os.mkdir(dir_path)
+    except FileExistsError:
+        print("{}{} already exists".format(err_msg, dir_path))
 
 
 class BilibiliVideo:
@@ -337,19 +356,7 @@ class DownloadThread(threading.Thread):
 
         return audio_content, video_content
 
-    @classmethod
-    def _make_dir(cls, dir_path):
-        print("creating dir {} for storing videos".format(dir_path))
-
-        try:
-            os.mkdir(dir_path)
-            print("done")
-        except FileExistsError:
-            print("{}{} already exists".format(err_msg, dir_path))
-
     def _save_audio_n_video(self, audio_content, video_content):
-        DownloadThread._make_dir(self.dir_path)
-
         # saves the video (and the audio for m4s)
         if self.bilibili_video_a_page.audio_url:
             # for m4s videos
@@ -499,7 +506,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     headers = {
         'Referer': bilibili_video.url,
         'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 '
-                      'Safari/537.36'
+                      'Safari/537.36',
     }
 
     # simulates logging in if the videos are flv
@@ -519,6 +526,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
 
     # makes a dir for storing the videos
     dir_path = os.path.join(root_dir, bilibili_video.video_title)
+    _make_dir(dir_path)
 
     # creates a queue for storing p numbers,
     # and a queue for bilibili_video_a_page objs, each of which reprs a p
