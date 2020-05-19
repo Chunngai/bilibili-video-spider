@@ -276,7 +276,6 @@ class BilibiliVideoAPage(BilibiliVideo):
             except KeyError:
                 # for flv videos
                 video_url = []
-
                 for durl in playinfo_dict["data"]["durl"]:
                     video_url.append((durl["order"], durl["url"]))
                 video_url = sorted(video_url, key=lambda elem: elem[0])
@@ -337,31 +336,50 @@ class DownloadThread(threading.Thread):
     def _get_audio_n_video_content(self):
         audio_content = None  # makes sense only for m4s videos
         video_content = None  # originally without sound for m4s videos
-        try:
-            if self.bilibili_video_a_page.audio_url:
-                # for m4s videos
-                print("downloading audio and video (without sound) \"{}\" in p{}".format(
-                    self.bilibili_video_a_page.p_title,
-                    self.bilibili_video_a_page.p_num))
+        if self.bilibili_video_a_page.audio_url:
+            # for m4s videos
+            print("downloading audio and video (without sound) \"{}\" in p{}".format(
+                self.bilibili_video_a_page.p_title,
+                self.bilibili_video_a_page.p_num))
 
+            try:
                 audio_content = requests.get(self.bilibili_video_a_page.audio_url,
                                              headers=headers, timeout=60).content
                 video_content = requests.get(self.bilibili_video_a_page.video_url,
                                              headers=headers, timeout=60).content
-            else:
-                # for flv videos
-                print("downloading video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
-                                                               self.bilibili_video_a_page.p_num))
+            except:
+                print(
+                    "{}cannot download data in p{}".format(err_msg, self.bilibili_video_a_page.p_num))
+        else:
+            # for flv videos
+            print("downloading video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
+                                                           self.bilibili_video_a_page.p_num))
 
-                video_content = []
+            video_content = []
+            flv_lock = threading.Lock()
 
-                for i in range(len(self.bilibili_video_a_page.video_url)):
-                    print(self.bilibili_video_a_page.video_url[i])
-                    video_content.append(requests.get(self.bilibili_video_a_page.video_url[i][1],
-                                                      headers=headers, timeout=60).content)
-        except:
-            print(
-                "{}cannot download data in p{}".format(err_msg, self.bilibili_video_a_page.p_num))
+            def get_flv_content(i, url):
+                try:
+                    r = requests.get(url, headers=headers, timeout=60)
+                    r.raise_for_status()
+
+                    flv_lock.acquire()
+                except:
+                    print(f"{err_msg}cannot download data of segment {i} in p{self.bilibili_video_a_page.p_num}")
+                else:
+                    video_content.append((i, r.content))
+                finally:
+                    flv_lock.release()
+
+            # gets flv video segments
+            for (i, url) in self.bilibili_video_a_page.video_url:
+                threading.Thread(target=get_flv_content, args=(i, url)).start()
+
+            # waits for all segments to be downloaded
+            while len(video_content) != len(self.bilibili_video_a_page.video_url):
+                pass
+
+            video_content = sorted(video_content, key=lambda elem: elem[0])
 
         return audio_content, video_content
 
@@ -392,11 +410,30 @@ class DownloadThread(threading.Thread):
             print("saving video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
                                                       self.bilibili_video_a_page.p_num))
 
-            self.video_path = os.path.join(self.dir_path, "{}_p{}.flv".format(self.bilibili_video_a_page.p_title,
-                                                                              self.bilibili_video_a_page.p_num))
+            video_names = [f"p{self.bilibili_video_a_page.p_num}_{i}.flv"
+                           for i, _ in self.bilibili_video_a_page.video_url]
+            video_paths = [os.path.join(self.dir_path, video_name)
+                           for video_name in video_names]
+            for (i, content) in video_content:
+                with open(video_paths[i - 1], "wb") as f:
+                    f.write(content)
 
-            with open(self.video_path, "wb") as f:
-                f.write(video_content)
+            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_a_page.p_num} files.txt")
+            for (i, _) in video_content:
+                with open(tmp_txt_path, 'a') as f:
+                    f.write(f"file '{video_names[i - 1]}'\n")
+
+            self.video_path = os.path.join(self.dir_path,
+                                           f"{self.bilibili_video_a_page.p_title}_p{self.bilibili_video_a_page.p_num}.flv")
+            subprocess.call(
+                [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}"'],
+                shell=True
+            )
+
+            # removes tmp files and flv segments
+            os.remove(tmp_txt_path)
+            for video_path in video_paths:
+                os.remove(video_path)
 
         try:
             p_num_scratched_lock.acquire()
