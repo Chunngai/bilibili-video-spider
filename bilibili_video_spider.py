@@ -414,19 +414,18 @@ class DownloadThread(threading.Thread):
                            for i, _ in self.bilibili_video_a_page.video_url]
             video_paths = [os.path.join(self.dir_path, video_name)
                            for video_name in video_names]
+            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_a_page.p_num} files.txt")
             for (i, content) in video_content:
                 with open(video_paths[i - 1], "wb") as f:
                     f.write(content)
 
-            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_a_page.p_num} files.txt")
-            for (i, _) in video_content:
                 with open(tmp_txt_path, 'a') as f:
                     f.write(f"file '{video_names[i - 1]}'\n")
 
             self.video_path = os.path.join(self.dir_path,
                                            f"{self.bilibili_video_a_page.p_title}_p{self.bilibili_video_a_page.p_num}.flv")
             subprocess.call(
-                [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}"'],
+                [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}" &> /dev/null'],
                 shell=True
             )
 
@@ -534,12 +533,10 @@ def validate_p_num(p_num, total_p_num):
         exit(2)
     # checks if from_p_num is greater than 0
     if from_p_num <= 0:
-        print("{}FROM-P-NUM should be greater than 0".format(err_msg))
-        exit(3)
+        from_p_num = 1
     # checks if the to p num is out of range
     if to_p_num > total_p_num:
-        print("{}the greatest TO-P-NUM: {}".format(err_msg, total_p_num))
-        exit(4)
+        to_p_num = total_p_num
 
     return from_p_num, to_p_num
 
