@@ -74,17 +74,19 @@ def log_in():
     qrcode_img = mpimg.imread("qrcode.png")
 
     # waits for logging in
+    start = time.time()
+
     def close():
-        while re.compile(r"注册").search(driver.page_source):
+        while re.compile(r"注册").search(driver.page_source)\
+                and time.time() - start <= 60:
             pass
         plt.close('all')
-
     Thread(target=close).start()
 
     plt.imshow(qrcode_img)
     plt.axis(False)
     while plt.get_fignums():
-        plt.pause(3)
+        plt.pause(5)
 
     # removes the qr code
     os.remove("qrcode.png")
@@ -376,8 +378,12 @@ class DownloadThread(threading.Thread):
                 threading.Thread(target=get_flv_content, args=(i, url)).start()
 
             # waits for all segments to be downloaded
-            while len(video_content) != len(self.bilibili_video_a_page.video_url):
+            start = time.time()
+            while len(video_content) != len(self.bilibili_video_a_page.video_url)\
+                    and time.time() - start <= 10 * 60:
                 pass
+            if len(video_content) != len(self.bilibili_video_a_page.video_url):
+                print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_a_page.p_num}")
 
             video_content = sorted(video_content, key=lambda elem: elem[0])
 
