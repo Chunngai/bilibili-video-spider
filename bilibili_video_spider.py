@@ -100,7 +100,7 @@ def _make_dir(dir_path):
     try:
         os.mkdir(dir_path)
     except FileExistsError:
-        print("{}{} already exists".format(err_msg, dir_path))
+        print(f"{dir_path} already exists")
 
 
 class BilibiliVideo:
@@ -560,10 +560,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
 
     # simulates logging in if the videos are flv
     global driver
-    if bilibili_video.ext == "flv":
-        driver = log_in()
-    else:
-        driver = None
+    driver = log_in() if bilibili_video.ext == "flv" else None
 
     # Validates if the from p num and to p num are valid.
     from_p_num, to_p_num = validate_p_num(p_num, bilibili_video.total_p_num)
