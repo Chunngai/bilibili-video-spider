@@ -105,17 +105,17 @@ def _make_dir(dir_path):
 
 class BilibiliVideo:
     def __init__(self, bv_num):
-        self.bv_num = bv_num
+        self.bv_num = bv_num if bv_num[:2] != 'BV' else bv_num[2:]
 
-        self.url = f"https://www.bilibili.com/video/BV{self.bv_num if self.bv_num[:2] != 'BV' else self.bv_num[2:]}"
-        self.av_num, self.video_title, self.p_title_list, self.cid_list, self.ext = BilibiliVideo._get_info(self.url)
+        self.url = f"https://www.bilibili.com/video/BV{self.bv_num}"
+        self.av_num, self.video_title, self.ext, self.p_title_list, self.cid_list = BilibiliVideo._get_videos_info(self.url)
         self.total_p_num = len(self.p_title_list)
 
         self.comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
-        self.total_comment_page_num = BilibiliVideo._get_total_comment_page_num(self.comment_url)
+        self.total_comment_page_num = BilibiliVideo._get_comments_info(self.comment_url)
 
     @classmethod
-    def _get_total_comment_page_num(cls, comment_url):
+    def _get_comments_info(cls, comment_url):
         try:
             r = requests.get(comment_url)
             r.raise_for_status()
@@ -124,10 +124,7 @@ class BilibiliVideo:
                 "{}cannot get total comment page num".format(err_msg))
         else:
             page = json.loads(r.text)["data"]["page"]
-            size = page["size"]
-            count = page["count"]
-
-            page_num = math.ceil(count / size)
+            page_num = math.ceil(page["count"] / page["size"])
 
             return page_num
 
@@ -146,36 +143,7 @@ class BilibiliVideo:
         return json.loads(window_initial_state.split(";(function()")[0])
 
     @classmethod
-    def _get_p_title_list(cls, pages):
-        # try:
-        #     # retrieves all p titles
-        #     p_title_list = [page["part"] for page in pages]
-        #
-        #     return p_title_list
-        # except:
-        #     print("{}cannot get p title list. title of the video will be used instead".format(err_msg))
-        #
-        #     return []
-
-        p_title_list = [page["part"] for page in pages]
-
-        return p_title_list
-
-    @classmethod
-    def _get_cid_list(cls, pages):
-        # try:
-        #     cid_list = [page["cid"] for page in pages]
-        #
-        #     return cid_list
-        # except:
-        #     raise
-
-        cid_list = [page["cid"] for page in pages]
-
-        return cid_list
-
-    @classmethod
-    def _get_info(cls, root_url):
+    def _get_videos_info(cls, root_url):
         try:
             r = requests.get(root_url, headers=headers, timeout=60)
             html_text = r.text
@@ -186,6 +154,8 @@ class BilibiliVideo:
             soup = BeautifulSoup(html_text, "html.parser")
             # gets window_initial_state dict
             window_initial_state_dict = BilibiliVideo._get_window_initial_state_dict(soup)
+            # gets the pages dict
+            pages = window_initial_state_dict["videoData"]["pages"]
 
             # gets the av num
             av_num = window_initial_state_dict["aid"]
@@ -194,15 +164,15 @@ class BilibiliVideo:
             video_title = soup.find("h1", "video-title")["title"]
 
             # gets the page title list of the video
-            p_title_list = BilibiliVideo._get_p_title_list(window_initial_state_dict["videoData"]["pages"])
+            p_title_list = [page["part"] for page in pages]
 
             # gets cid list
-            cid_list = BilibiliVideo._get_cid_list(window_initial_state_dict["videoData"]["pages"])
+            cid_list = [page["cid"] for page in pages]
 
             # gets the ext
             ext = "m4s" if "m4s" in html_text else "flv"
 
-            return av_num, video_title, p_title_list, cid_list, ext
+            return av_num, video_title, ext, p_title_list, cid_list
 
 
 class BilibiliVideoAPage(BilibiliVideo):
