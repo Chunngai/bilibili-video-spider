@@ -178,11 +178,11 @@ class BilibiliVideo:
 class BilibiliVideoAPage(BilibiliVideo):
     def __init__(self, bilibili_video, p_num):
         super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num)
+
         self.url = bilibili_video.url
         self.p_num = p_num
 
         self.p_url = f"{self.url}?p={self.p_num}"
-        # self.p_title = self.p_title_list[self.p_num - 1] if self.total_p_num > 1 else self.video_title
         self.p_title = self.p_title_list[self.p_num - 1]
         self.danmaku_url = f"https://api.bilibili.com/x/v1/dm/list.so?oid={self.cid_list[p_num - 1]}"
 
@@ -204,6 +204,7 @@ class BilibiliVideoAPage(BilibiliVideo):
                 driver.get(p_url)
 
                 WebDriverWait(driver, 10).until(ec.presence_of_element_located((By.XPATH, "/html/head/script[3]")))
+
                 return driver.page_source
             except:
                 print("{}cannot get html text of p{}".format(err_msg, p_num))
