@@ -163,14 +163,14 @@ class BilibiliVideo:
             # gets the title of the videos
             video_title = soup.find("h1", "video-title")["title"]
 
+            # gets the ext
+            ext = "m4s" if "m4s" in html_text else "flv"
+
             # gets the page title list of the video
             p_title_list = [page["part"] for page in pages]
 
             # gets cid list
             cid_list = [page["cid"] for page in pages]
-
-            # gets the ext
-            ext = "m4s" if "m4s" in html_text else "flv"
 
             return av_num, video_title, ext, p_title_list, cid_list
 
