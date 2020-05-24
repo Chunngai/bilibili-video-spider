@@ -186,7 +186,10 @@ class BilibiliVideoAPage(BilibiliVideo):
         self.p_title = self.p_title_list[self.p_num - 1]
         self.danmaku_url = f"https://api.bilibili.com/x/v1/dm/list.so?oid={self.cid_list[p_num - 1]}"
 
-        self.audio_url, self.video_url = BilibiliVideoAPage._get_audio_video_url(self.p_url, self.p_num)
+        if self.ext == "bs4":
+            self.audio_url, self.video_url = BilibiliVideoAPage._get_m4s_audio_and_video_urls(self.p_url, self.p_num)
+        else:
+            self.video_urls = BilibiliVideoAPage._get_flv_video_urls(self.p_url, self.p_num)
 
     @classmethod
     def _get_html_text(cls, p_url, p_num):
@@ -225,7 +228,7 @@ class BilibiliVideoAPage(BilibiliVideo):
         return script_window_playinfo
 
     @classmethod
-    def _get_audio_video_url(cls, p_url, p_num):
+    def _get_playinfo_dict(cls, p_url, p_num):
         html_text = BilibiliVideoAPage._get_html_text(p_url, p_num)
         if not html_text:
             return
@@ -234,34 +237,40 @@ class BilibiliVideoAPage(BilibiliVideo):
         # retrieves the script tag containing needed download urls
         script_window_playinfo = BilibiliVideoAPage._get_script_window_playinfo(soup)
 
-        audio_url = None
-        video_url = None
         try:
             # gets audio url and video url
             playinfo_dict = json.loads(script_window_playinfo)
+
+            return playinfo_dict
         except:
             print("{}cannot get <script> with needed urls for p{}".format(err_msg, p_num))
-        else:
-            try:
-                # for m4s videos
-                video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
-                audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
-            except KeyError:
-                # for flv videos
-                video_url = []
-                for durl in playinfo_dict["data"]["durl"]:
-                    video_url.append((durl["order"], durl["url"]))
-                video_url = sorted(video_url, key=lambda elem: elem[0])
-            except:
-                print(
-                    "{}cannot get download url for p{}".format(err_msg, p_num))
+
+    @classmethod
+    def _get_m4s_audio_and_video_urls(cls, p_url, p_num):
+        playinfo_dict = BilibiliVideoAPage._get_playinfo_dict(p_url, p_num)
+
+        audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
+        video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
 
         return audio_url, video_url
+
+    @classmethod
+    def _get_flv_video_urls(cls, p_url, p_num):
+        playinfo_dict = BilibiliVideoAPage._get_playinfo_dict(p_url, p_num)
+
+        # for flv videos
+        video_urls = []
+        for durl in playinfo_dict["data"]["durl"]:
+            video_urls.append((durl["order"], durl["url"]))
+        video_urls = sorted(video_urls, key=lambda elem: elem[0])
+
+        return video_urls
 
 
 class GetUrlThread(threading.Thread):
     def __init__(self, thread_name, bilibili_video, p_num_queue, url_queue):
         super(GetUrlThread, self).__init__()
+
         self.bilibili_video = bilibili_video
         self.bilibili_video_a_page = None
 
