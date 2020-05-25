@@ -14,6 +14,8 @@ import re
 from threading import Thread
 
 import requests
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
@@ -21,8 +23,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 
 
 def log_in():
@@ -108,16 +108,15 @@ class BilibiliVideo:
         self.bv_num = bv_num if bv_num[:2] != 'BV' else bv_num[2:]
 
         self.url = f"https://www.bilibili.com/video/BV{self.bv_num}"
-        self.av_num, self.video_title, self.ext, self.p_title_list, self.cid_list = BilibiliVideo._get_videos_info(self.url)
+        self.av_num, self.video_title, self.ext, self.p_title_list, self.cid_list = self._get_videos_info()
         self.total_p_num = len(self.p_title_list)
 
         self.comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
-        self.total_comment_page_num = BilibiliVideo._get_comments_info(self.comment_url)
+        self.total_comment_page_num = self._get_comments_info()
 
-    @classmethod
-    def _get_comments_info(cls, comment_url):
+    def _get_comments_info(self):
         try:
-            r = requests.get(comment_url)
+            r = requests.get(self.comment_url)
             r.raise_for_status()
         except:
             print(
@@ -142,13 +141,12 @@ class BilibiliVideo:
 
         return json.loads(window_initial_state.split(";(function()")[0])
 
-    @classmethod
-    def _get_videos_info(cls, root_url):
+    def _get_videos_info(self):
         try:
-            r = requests.get(root_url, headers=headers, timeout=60)
+            r = requests.get(self.url, headers=headers, timeout=60)
             html_text = r.text
         except:
-            print("{}cannot access to {}".format(err_msg, root_url))
+            print("{}cannot access to {}".format(err_msg, self.url))
             exit(1)
         else:
             soup = BeautifulSoup(html_text, "html.parser")
@@ -175,9 +173,9 @@ class BilibiliVideo:
             return av_num, video_title, ext, p_title_list, cid_list
 
 
-class BilibiliVideoAPage(BilibiliVideo):
+class BilibiliVideoPage(BilibiliVideo):
     def __init__(self, bilibili_video, p_num):
-        super(BilibiliVideoAPage, self).__init__(bilibili_video.bv_num)
+        super(BilibiliVideoPage, self).__init__(bilibili_video.bv_num)
 
         self.url = bilibili_video.url
         self.p_num = p_num
@@ -186,28 +184,32 @@ class BilibiliVideoAPage(BilibiliVideo):
         self.p_title = self.p_title_list[self.p_num - 1]
         self.danmaku_url = f"https://api.bilibili.com/x/v1/dm/list.so?oid={self.cid_list[p_num - 1]}"
 
-        self.audio_url, self.video_url = BilibiliVideoAPage._get_audio_video_url(self.p_url, self.p_num)
+        if self.ext == "m4s":
+            self.audio_url, self.video_url = self._get_m4s_urls()
+        else:
+            self.video_urls = self._get_flv_urls()
 
-    @classmethod
-    def _get_html_text(cls, p_url, p_num):
+    def _get_html_text(self):
         if not driver:
-            # for m4s videos
+            # for m4s videos and flv videos without logging in
             try:
-                r = requests.get(p_url, headers=headers, timeout=60)
+                r = requests.get(self.p_url, headers=headers, timeout=60)
+                r.raise_for_status()
+
                 return r.text
             except:
-                print("{}cannot get html text of p{}".format(err_msg, p_num))
+                print("{}cannot get html text of p{}".format(err_msg, self.p_num))
         else:
-            # for flv videos
+            # for flv videos with logging in
             try:
                 driver_lock.acquire()
-                driver.get(p_url)
+                driver.get(self.p_url)
 
                 WebDriverWait(driver, 10).until(ec.presence_of_element_located((By.XPATH, "/html/head/script[3]")))
 
                 return driver.page_source
             except:
-                print("{}cannot get html text of p{}".format(err_msg, p_num))
+                print("{}cannot get html text of p{}".format(err_msg, self.p_num))
             finally:
                 driver_lock.release()
 
@@ -225,45 +227,43 @@ class BilibiliVideoAPage(BilibiliVideo):
         return script_window_playinfo
 
     @classmethod
-    def _get_audio_video_url(cls, p_url, p_num):
-        html_text = BilibiliVideoAPage._get_html_text(p_url, p_num)
-        if not html_text:
-            return
-
+    def _get_playinfo_dict(cls, html_text):
         soup = BeautifulSoup(html_text, "html.parser")
         # retrieves the script tag containing needed download urls
-        script_window_playinfo = BilibiliVideoAPage._get_script_window_playinfo(soup)
+        script_window_playinfo = BilibiliVideoPage._get_script_window_playinfo(soup)
 
-        audio_url = None
-        video_url = None
         try:
             # gets audio url and video url
             playinfo_dict = json.loads(script_window_playinfo)
+
+            return playinfo_dict
         except:
-            print("{}cannot get <script> with needed urls for p{}".format(err_msg, p_num))
-        else:
-            try:
-                # for m4s videos
-                video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
-                audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
-            except KeyError:
-                # for flv videos
-                video_url = []
-                for durl in playinfo_dict["data"]["durl"]:
-                    video_url.append((durl["order"], durl["url"]))
-                video_url = sorted(video_url, key=lambda elem: elem[0])
-            except:
-                print(
-                    "{}cannot get download url for p{}".format(err_msg, p_num))
+            print("{}cannot get <script> with needed urls for p{}".format(err_msg, self.p_num))
+
+    def _get_m4s_urls(self):
+        playinfo_dict = self._get_playinfo_dict(self._get_html_text())
+
+        video_url = playinfo_dict["data"]["dash"]["video"][0]["baseUrl"]
+        audio_url = playinfo_dict["data"]["dash"]["audio"][0]["baseUrl"]
 
         return audio_url, video_url
+
+    def _get_flv_urls(self):
+        playinfo_dict = self._get_playinfo_dict(self._get_html_text())
+
+        video_urls = []
+        for durl in playinfo_dict["data"]["durl"]:
+            video_urls.append((durl["order"], durl["url"]))
+        video_urls = sorted(video_urls, key=lambda elem: elem[0])
+
+        return video_urls
 
 
 class GetUrlThread(threading.Thread):
     def __init__(self, thread_name, bilibili_video, p_num_queue, url_queue):
         super(GetUrlThread, self).__init__()
+
         self.bilibili_video = bilibili_video
-        self.bilibili_video_a_page = None
 
         self.thread_name = thread_name
         self.p_num_queue = p_num_queue
@@ -274,16 +274,15 @@ class GetUrlThread(threading.Thread):
             # gets a p num
             p_num = self.p_num_queue.get()
 
-            self.bilibili_video_a_page = BilibiliVideoAPage(self.bilibili_video, p_num)
+            # puts a bilibili_video_page into the queue
 
-            # puts bilibili_video_a_page into the queue
-            self.url_queue.put(self.bilibili_video_a_page)
+            self.url_queue.put(BilibiliVideoPage(self.bilibili_video, p_num))
 
 
 class DownloadThread(threading.Thread):
     def __init__(self, thread_name, dir_path, url_queue):
         super(DownloadThread, self).__init__()
-        self.bilibili_video_a_page = None
+        self.bilibili_video_page = None
 
         self.dir_path = dir_path
         self.audio_path = ""  # makes sense only for m4s files
@@ -296,8 +295,8 @@ class DownloadThread(threading.Thread):
     def run(self):
         while p_num_scratched < total_p_num_to_be_scratched:
             try:
-                # gets a bilibili_video_a_page obj
-                self.bilibili_video_a_page = self.url_queue.get(True, timeout=60)
+                # gets a bilibili_video_page obj
+                self.bilibili_video_page = self.url_queue.get(True, timeout=60)
 
                 # saves the audio and video
                 self._save_audio_n_video(*self._get_audio_n_video_content())
@@ -309,24 +308,24 @@ class DownloadThread(threading.Thread):
     def _get_audio_n_video_content(self):
         audio_content = None  # makes sense only for m4s videos
         video_content = None  # originally without sound for m4s videos
-        if self.bilibili_video_a_page.audio_url:
+        if self.bilibili_video_page.audio_url:
             # for m4s videos
             print("downloading audio and video (without sound) \"{}\" in p{}".format(
-                self.bilibili_video_a_page.p_title,
-                self.bilibili_video_a_page.p_num))
+                self.bilibili_video_page.p_title,
+                self.bilibili_video_page.p_num))
 
             try:
-                audio_content = requests.get(self.bilibili_video_a_page.audio_url,
+                audio_content = requests.get(self.bilibili_video_page.audio_url,
                                              headers=headers, timeout=60).content
-                video_content = requests.get(self.bilibili_video_a_page.video_url,
+                video_content = requests.get(self.bilibili_video_page.video_url,
                                              headers=headers, timeout=60).content
             except:
                 print(
-                    "{}cannot download data in p{}".format(err_msg, self.bilibili_video_a_page.p_num))
+                    "{}cannot download data in p{}".format(err_msg, self.bilibili_video_page.p_num))
         else:
             # for flv videos
-            print("downloading video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
-                                                           self.bilibili_video_a_page.p_num))
+            print("downloading video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                           self.bilibili_video_page.p_num))
 
             video_content = []
             flv_lock = threading.Lock()
@@ -338,23 +337,23 @@ class DownloadThread(threading.Thread):
 
                     flv_lock.acquire()
                 except:
-                    print(f"{err_msg}cannot download data of segment {i} in p{self.bilibili_video_a_page.p_num}")
+                    print(f"{err_msg}cannot download data of segment {i} in p{self.bilibili_video_page.p_num}")
                 else:
                     video_content.append((i, r.content))
                 finally:
                     flv_lock.release()
 
             # gets flv video segments
-            for (i, url) in self.bilibili_video_a_page.video_url:
+            for (i, url) in self.bilibili_video_page.video_url:
                 threading.Thread(target=get_flv_content, args=(i, url)).start()
 
             # waits for all segments to be downloaded
             start = time.time()
-            while len(video_content) != len(self.bilibili_video_a_page.video_url)\
+            while len(video_content) != len(self.bilibili_video_page.video_url)\
                     and time.time() - start <= 10 * 60:
                 pass
-            if len(video_content) != len(self.bilibili_video_a_page.video_url):
-                print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_a_page.p_num}")
+            if len(video_content) != len(self.bilibili_video_page.video_url):
+                print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_page.p_num}")
 
             video_content = sorted(video_content, key=lambda elem: elem[0])
 
@@ -362,36 +361,51 @@ class DownloadThread(threading.Thread):
 
     def _save_audio_n_video(self, audio_content, video_content):
         # saves the video (and the audio for m4s)
-        if self.bilibili_video_a_page.audio_url:
+        if self.bilibili_video_page.audio_url:
             # for m4s videos
-            print("saving audio and video (without sound) \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
-                                                                                self.bilibili_video_a_page.p_num))
+            def _combine():
+                # combines audio and video of the m4s file
+                print("combining {} and {} into {}".format(os.path.basename(self.video_path),
+                                                           os.path.basename(self.audio_path),
+                                                           os.path.basename(self.mp4_file_name)))
+
+                subprocess.call(
+                    ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
+                                                                                      self.mp4_file_name)],
+                    shell=True)
+
+                # removes tmp m4s files
+                os.remove(self.audio_path)
+                os.remove(self.video_path)
+
+            print("saving audio and video (without sound) \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                                                self.bilibili_video_page.p_num))
 
             self.audio_path = os.path.join(self.dir_path, "{}_p{}_audio.m4s".format(
-                self.bilibili_video_a_page.p_title,
-                self.bilibili_video_a_page.p_num))
+                self.bilibili_video_page.p_title,
+                self.bilibili_video_page.p_num))
             self.video_path = os.path.join(self.dir_path, "{}_p{}_video.m4s".format(
-                self.bilibili_video_a_page.p_title,
-                self.bilibili_video_a_page.p_num))
+                self.bilibili_video_page.p_title,
+                self.bilibili_video_page.p_num))
             self.mp4_file_name = os.path.join(self.dir_path, "p{}_{}.mp4".format(
-                self.bilibili_video_a_page.p_num, self.bilibili_video_a_page.p_title))
+                self.bilibili_video_page.p_num, self.bilibili_video_page.p_title))
 
             with open(self.audio_path, "wb") as f_audio:
                 f_audio.write(audio_content)
             with open(self.video_path, "wb") as f_video:
                 f_video.write(video_content)
 
-            self._combine()
+            _combine()
         else:
             # for flv videos
-            print("saving video \"{}\" in p{}".format(self.bilibili_video_a_page.p_title,
-                                                      self.bilibili_video_a_page.p_num))
+            print("saving video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                      self.bilibili_video_page.p_num))
 
-            video_names = [f"p{self.bilibili_video_a_page.p_num}_{i}.flv"
-                           for i, _ in self.bilibili_video_a_page.video_url]
+            video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
+                           for i, _ in self.bilibili_video_page.video_url]
             video_paths = [os.path.join(self.dir_path, video_name)
                            for video_name in video_names]
-            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_a_page.p_num} files.txt")
+            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
             for (i, content) in video_content:
                 with open(video_paths[i - 1], "wb") as f:
                     f.write(content)
@@ -400,7 +414,7 @@ class DownloadThread(threading.Thread):
                     f.write(f"file '{video_names[i - 1]}'\n")
 
             self.video_path = os.path.join(self.dir_path,
-                                           f"{self.bilibili_video_a_page.p_title}_p{self.bilibili_video_a_page.p_num}.flv")
+                                           f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
             subprocess.call(
                 [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}" &> /dev/null'],
                 shell=True
@@ -419,21 +433,6 @@ class DownloadThread(threading.Thread):
         finally:
             p_num_scratched_lock.release()
 
-    def _combine(self):
-        # combines audio and video of the m4s file
-        print("combining {} and {} into {}".format(os.path.basename(self.video_path),
-                                                   os.path.basename(self.audio_path),
-                                                   os.path.basename(self.mp4_file_name)))
-
-        subprocess.call(
-            ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
-                                                                              self.mp4_file_name)],
-            shell=True)
-
-        # removes tmp m4s files
-        os.remove(self.audio_path)
-        os.remove(self.video_path)
-
 
 def create_queues(from_p_num, to_p_num):
     # creates a queue for storing p numbers
@@ -450,7 +449,7 @@ def create_queues(from_p_num, to_p_num):
 
 def create_threads(dir_path, bilibili_video, p_num_queue, url_queue):
     get_url_thread_list = []
-    # threads for storing bilibili_video_a_page objs
+    # threads for storing bilibili_video_page objs
     for i in range(6):
         get_url_thread = GetUrlThread("get url thread {}".format(i + 1), bilibili_video,
                                       p_num_queue,
@@ -546,9 +545,9 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     _make_dir(dir_path)
 
     # creates a queue for storing p numbers,
-    # and a queue for bilibili_video_a_page objs, each of which reprs a p
+    # and a queue for bilibili_video_page objs, each of which reprs a p
     p_num_queue, url_queue = create_queues(from_p_num, to_p_num)
-    # creates a thread for retrieving bilibili_video_a_page objs,
+    # creates a thread for retrieving bilibili_video_page objs,
     # and a thread for downloading and saving videos
     get_url_thread_list, download_thread_list = create_threads(dir_path, bilibili_video, p_num_queue,
                                                                url_queue)
