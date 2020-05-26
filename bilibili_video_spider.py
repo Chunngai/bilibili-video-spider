@@ -226,8 +226,7 @@ class BilibiliVideoPage(BilibiliVideo):
 
         return script_window_playinfo
 
-    @classmethod
-    def _get_playinfo_dict(cls, html_text):
+    def _get_playinfo_dict(self, html_text):
         soup = BeautifulSoup(html_text, "html.parser")
         # retrieves the script tag containing needed download urls
         script_window_playinfo = BilibiliVideoPage._get_script_window_playinfo(soup)
@@ -282,6 +281,7 @@ class GetUrlThread(threading.Thread):
 class DownloadThread(threading.Thread):
     def __init__(self, thread_name, dir_path, url_queue):
         super(DownloadThread, self).__init__()
+
         self.bilibili_video_page = None
 
         self.dir_path = dir_path
@@ -299,131 +299,129 @@ class DownloadThread(threading.Thread):
                 self.bilibili_video_page = self.url_queue.get(True, timeout=60)
 
                 # saves the audio and video
-                self._save_audio_n_video(*self._get_audio_n_video_content())
+                if self.bilibili_video_page.ext == "m4s":
+                    self._save_m4s(self._get_m4s_contents())
+                else:
+                    self._save_flv(self._get_flv_contents())
             except:
                 # print("{}{} terminated due to time out "
                 #       "when getting download urls from url queue".format(err_msg, self.thread_name))
                 break
 
-    def _get_audio_n_video_content(self):
-        audio_content = None  # makes sense only for m4s videos
-        video_content = None  # originally without sound for m4s videos
-        if self.bilibili_video_page.audio_url:
-            # for m4s videos
-            print("downloading audio and video (without sound) \"{}\" in p{}".format(
-                self.bilibili_video_page.p_title,
-                self.bilibili_video_page.p_num))
+    def _get_m4s_contents(self):
+        print("downloading audio and video (without sound) \"{}\" in p{}".format(
+            self.bilibili_video_page.p_title,
+            self.bilibili_video_page.p_num))
 
+        try:
+            audio_content = requests.get(self.bilibili_video_page.audio_url,
+                                         headers=headers, timeout=60).content
+            video_content = requests.get(self.bilibili_video_page.video_url,
+                                         headers=headers, timeout=60).content
+
+            return audio_content, video_content
+        except:
+            print(
+                "{}cannot download data in p{}".format(err_msg, self.bilibili_video_page.p_num))
+
+    def _get_flv_contents(self):
+        print("downloading video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                       self.bilibili_video_page.p_num))
+
+        video_contents = []
+        flv_lock = threading.Lock()
+
+        def get_flv_content(i, url):
             try:
-                audio_content = requests.get(self.bilibili_video_page.audio_url,
-                                             headers=headers, timeout=60).content
-                video_content = requests.get(self.bilibili_video_page.video_url,
-                                             headers=headers, timeout=60).content
+                r = requests.get(url, headers=headers, timeout=60)
+                r.raise_for_status()
+
+                flv_lock.acquire()
             except:
-                print(
-                    "{}cannot download data in p{}".format(err_msg, self.bilibili_video_page.p_num))
-        else:
-            # for flv videos
-            print("downloading video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
-                                                           self.bilibili_video_page.p_num))
+                print(f"{err_msg}cannot download data of segment {i} in p{self.bilibili_video_page.p_num}")
+            else:
+                video_contents.append((i, r.content))
+            finally:
+                flv_lock.release()
 
-            video_content = []
-            flv_lock = threading.Lock()
+        # gets flv video segments
+        for (i, url) in self.bilibili_video_page.video_url:
+            threading.Thread(target=get_flv_content, args=(i, url)).start()
 
-            def get_flv_content(i, url):
-                try:
-                    r = requests.get(url, headers=headers, timeout=60)
-                    r.raise_for_status()
+        # waits for all segments to be downloaded
+        start = time.time()
+        while len(video_contents) != len(self.bilibili_video_page.video_url) \
+                and time.time() - start <= 10 * 60:
+            pass
+        if len(video_contents) != len(self.bilibili_video_page.video_url):
+            print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_page.p_num}")
 
-                    flv_lock.acquire()
-                except:
-                    print(f"{err_msg}cannot download data of segment {i} in p{self.bilibili_video_page.p_num}")
-                else:
-                    video_content.append((i, r.content))
-                finally:
-                    flv_lock.release()
+        video_contents = sorted(video_contents, key=lambda elem: elem[0])
 
-            # gets flv video segments
-            for (i, url) in self.bilibili_video_page.video_url:
-                threading.Thread(target=get_flv_content, args=(i, url)).start()
+        return video_contents
 
-            # waits for all segments to be downloaded
-            start = time.time()
-            while len(video_content) != len(self.bilibili_video_page.video_url)\
-                    and time.time() - start <= 10 * 60:
-                pass
-            if len(video_content) != len(self.bilibili_video_page.video_url):
-                print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_page.p_num}")
+    def _combine(self):
+        # combines audio and video of the m4s file
+        print("combining {} and {} into {}".format(os.path.basename(self.video_path),
+                                                   os.path.basename(self.audio_path),
+                                                   os.path.basename(self.mp4_file_name)))
 
-            video_content = sorted(video_content, key=lambda elem: elem[0])
+        subprocess.call(
+            ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
+                                                                              self.mp4_file_name)],
+            shell=True)
 
-        return audio_content, video_content
+        # removes tmp m4s files
+        os.remove(self.audio_path)
+        os.remove(self.video_path)
 
-    def _save_audio_n_video(self, audio_content, video_content):
-        # saves the video (and the audio for m4s)
-        if self.bilibili_video_page.audio_url:
-            # for m4s videos
-            def _combine():
-                # combines audio and video of the m4s file
-                print("combining {} and {} into {}".format(os.path.basename(self.video_path),
-                                                           os.path.basename(self.audio_path),
-                                                           os.path.basename(self.mp4_file_name)))
+    def _save_m4s(self, audio_content, video_content):
+        print("saving audio and video (without sound) \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                                            self.bilibili_video_page.p_num))
 
-                subprocess.call(
-                    ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(self.video_path, self.audio_path,
-                                                                                      self.mp4_file_name)],
-                    shell=True)
+        self.audio_path = os.path.join(self.dir_path, "{}_p{}_audio.m4s".format(
+            self.bilibili_video_page.p_title,
+            self.bilibili_video_page.p_num))
+        self.video_path = os.path.join(self.dir_path, "{}_p{}_video.m4s".format(
+            self.bilibili_video_page.p_title,
+            self.bilibili_video_page.p_num))
+        self.mp4_file_name = os.path.join(self.dir_path, "p{}_{}.mp4".format(
+            self.bilibili_video_page.p_num, self.bilibili_video_page.p_title))
 
-                # removes tmp m4s files
-                os.remove(self.audio_path)
-                os.remove(self.video_path)
+        with open(self.audio_path, "wb") as f_audio:
+            f_audio.write(audio_content)
+        with open(self.video_path, "wb") as f_video:
+            f_video.write(video_content)
 
-            print("saving audio and video (without sound) \"{}\" in p{}".format(self.bilibili_video_page.p_title,
-                                                                                self.bilibili_video_page.p_num))
+        self._combine()
 
-            self.audio_path = os.path.join(self.dir_path, "{}_p{}_audio.m4s".format(
-                self.bilibili_video_page.p_title,
-                self.bilibili_video_page.p_num))
-            self.video_path = os.path.join(self.dir_path, "{}_p{}_video.m4s".format(
-                self.bilibili_video_page.p_title,
-                self.bilibili_video_page.p_num))
-            self.mp4_file_name = os.path.join(self.dir_path, "p{}_{}.mp4".format(
-                self.bilibili_video_page.p_num, self.bilibili_video_page.p_title))
+    def _save_flv(self, video_contents):
+        print("saving video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                  self.bilibili_video_page.p_num))
 
-            with open(self.audio_path, "wb") as f_audio:
-                f_audio.write(audio_content)
-            with open(self.video_path, "wb") as f_video:
-                f_video.write(video_content)
+        video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
+                       for i, _ in self.bilibili_video_page.video_url]
+        video_paths = [os.path.join(self.dir_path, video_name)
+                       for video_name in video_names]
+        tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
+        for (i, content) in video_contents:
+            with open(video_paths[i - 1], "wb") as f:
+                f.write(content)
 
-            _combine()
-        else:
-            # for flv videos
-            print("saving video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
-                                                      self.bilibili_video_page.p_num))
+            with open(tmp_txt_path, 'a') as f:
+                f.write(f"file '{video_names[i - 1]}'\n")
 
-            video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
-                           for i, _ in self.bilibili_video_page.video_url]
-            video_paths = [os.path.join(self.dir_path, video_name)
-                           for video_name in video_names]
-            tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
-            for (i, content) in video_content:
-                with open(video_paths[i - 1], "wb") as f:
-                    f.write(content)
+        self.video_path = os.path.join(self.dir_path,
+                                       f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
+        subprocess.call(
+            [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}" &> /dev/null'],
+            shell=True
+        )
 
-                with open(tmp_txt_path, 'a') as f:
-                    f.write(f"file '{video_names[i - 1]}'\n")
-
-            self.video_path = os.path.join(self.dir_path,
-                                           f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
-            subprocess.call(
-                [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{self.video_path}" &> /dev/null'],
-                shell=True
-            )
-
-            # removes tmp files and flv segments
-            os.remove(tmp_txt_path)
-            for video_path in video_paths:
-                os.remove(video_path)
+        # removes tmp files and flv segments
+        os.remove(tmp_txt_path)
+        for video_path in video_paths:
+            os.remove(video_path)
 
         try:
             p_num_scratched_lock.acquire()
