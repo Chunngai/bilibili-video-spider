@@ -351,15 +351,15 @@ class DownloadThread(threading.Thread):
                 flv_lock.release()
 
         # gets flv video segments
-        for (i, url) in self.bilibili_video_page.video_url:
+        for (i, url) in self.bilibili_video_page.video_urls:
             threading.Thread(target=get_flv_content, args=(i, url)).start()
 
         # waits for all segments to be downloaded
         start = time.time()
-        while len(video_contents) != len(self.bilibili_video_page.video_url) \
+        while len(video_contents) != len(self.bilibili_video_page.video_urls) \
                 and time.time() - start <= 10 * 60:
             pass
-        if len(video_contents) != len(self.bilibili_video_page.video_url):
+        if len(video_contents) != len(self.bilibili_video_page.video_urls):
             print(f"{err_msg}cannot retrieve the complete video of p{self.bilibili_video_page.p_num}")
 
         video_contents = sorted(video_contents, key=lambda elem: elem[0])
@@ -424,7 +424,7 @@ class DownloadThread(threading.Thread):
                                                   self.bilibili_video_page.p_num))
 
         video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
-                       for i, _ in self.bilibili_video_page.video_url]
+                       for i, _ in self.bilibili_video_page.video_urls]
         video_paths = [os.path.join(self.dir_path, video_name)
                        for video_name in video_names]
         for (i, content) in video_contents:
