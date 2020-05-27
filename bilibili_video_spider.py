@@ -274,7 +274,6 @@ class GetUrlThread(threading.Thread):
             p_num = self.p_num_queue.get()
 
             # puts a bilibili_video_page into the queue
-
             self.url_queue.put(BilibiliVideoPage(self.bilibili_video, p_num))
 
 
@@ -293,6 +292,7 @@ class DownloadThread(threading.Thread):
         self.url_queue = url_queue
 
     def run(self):
+        global p_num_scratched
         while p_num_scratched < total_p_num_to_be_scratched:
             try:
                 # gets a bilibili_video_page obj
@@ -300,9 +300,15 @@ class DownloadThread(threading.Thread):
 
                 # saves the audio and video
                 if self.bilibili_video_page.ext == "m4s":
-                    self._save_m4s(self._get_m4s_contents())
+                    self._save_m4s(*self._get_m4s_contents())
                 else:
                     self._save_flv(self._get_flv_contents())
+
+                try:
+                    p_num_scratched_lock.acquire()
+                    p_num_scratched += 1
+                finally:
+                    p_num_scratched_lock.release()
             except:
                 # print("{}{} terminated due to time out "
                 #       "when getting download urls from url queue".format(err_msg, self.thread_name))
@@ -395,21 +401,11 @@ class DownloadThread(threading.Thread):
 
         self._combine()
 
-    def _save_flv(self, video_contents):
-        print("saving video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
-                                                  self.bilibili_video_page.p_num))
-
-        video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
-                       for i, _ in self.bilibili_video_page.video_url]
-        video_paths = [os.path.join(self.dir_path, video_name)
-                       for video_name in video_names]
+    def _concat(self, video_names, video_paths):
         tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
-        for (i, content) in video_contents:
-            with open(video_paths[i - 1], "wb") as f:
-                f.write(content)
-
-            with open(tmp_txt_path, 'a') as f:
-                f.write(f"file '{video_names[i - 1]}'\n")
+        with open(tmp_txt_path, 'a') as f:
+            for video_name in video_names:
+                f.write(f"file '{video_name}'\n")
 
         self.video_path = os.path.join(self.dir_path,
                                        f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
@@ -423,13 +419,19 @@ class DownloadThread(threading.Thread):
         for video_path in video_paths:
             os.remove(video_path)
 
-        try:
-            p_num_scratched_lock.acquire()
+    def _save_flv(self, video_contents):
+        print("saving video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
+                                                  self.bilibili_video_page.p_num))
 
-            global p_num_scratched
-            p_num_scratched += 1
-        finally:
-            p_num_scratched_lock.release()
+        video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
+                       for i, _ in self.bilibili_video_page.video_url]
+        video_paths = [os.path.join(self.dir_path, video_name)
+                       for video_name in video_names]
+        for (i, content) in video_contents:
+            with open(video_paths[i - 1], "wb") as f:
+                f.write(content)
+
+        self._concat(video_names, video_paths)
 
 
 def create_queues(from_p_num, to_p_num):
