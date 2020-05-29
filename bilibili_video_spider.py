@@ -25,9 +25,7 @@ from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 
-def log_in():
-    login_page_url = "https://passport.bilibili.com/login"  # log in page
-
+def config_driver():
     # generates a headless chrome driver
     capability = DesiredCapabilities.CHROME
     capability["pageLoadStrategy"] = "none"
@@ -35,12 +33,12 @@ def log_in():
     chrome_options = Options()
     chrome_options.add_argument('--headless')
 
-    global driver
-    driver = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
+    driver_ = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
 
-    # accesses the log in page
-    driver.get(login_page_url)
+    return driver_
 
+
+def get_qrcode():
     try:
         wait = WebDriverWait(driver, 20)
         wait.until(ec.presence_of_element_located((By.CLASS_NAME, "qrcode-img")))
@@ -60,17 +58,14 @@ def log_in():
               "flv videos can also be scratched, but with lower quality".format(err_msg))
         return
 
-    print("getting qr code for logging in")
-
     # gets and saves the qr code for logging in
+    print("getting qr code for logging in")
     qrcode_img = base64.urlsafe_b64decode(qrcode_img_url + '=' * (4 - len(qrcode_img_url) % 4))
     with open("qrcode.png", "wb") as f:
         f.write(qrcode_img)
 
-    # displays the qr code
-    print("scan the qr code to log in for flv videos of higher qualities")
-    print("close the qr code window to retrieve flv videos of lower qualities without logging in")
 
+def wait_for_logging_in():
     qrcode_img = mpimg.imread("qrcode.png")
 
     # waits for logging in
@@ -91,6 +86,23 @@ def log_in():
 
     # removes the qr code
     os.remove("qrcode.png")
+
+
+def log_in():
+    global driver
+    config_driver()
+
+    # accesses the log in page
+    login_page_url = "https://passport.bilibili.com/login"  # log in page
+    driver.get(login_page_url)
+
+    get_qrcode()
+
+    # displays the qr code
+    print("scan the qr code to log in for flv videos of higher qualities")
+    print("close the qr code window to retrieve flv videos of lower qualities without logging in")
+
+    wait_for_logging_in()
 
     return driver
 
