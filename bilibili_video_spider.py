@@ -24,8 +24,13 @@ from selenium.webdriver.support.wait import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
+join = os.path.join
+basename = os.path.basename
+
 
 def config_driver():
+    global driver
+
     # generates a headless chrome driver
     capability = DesiredCapabilities.CHROME
     capability["pageLoadStrategy"] = "none"
@@ -33,9 +38,7 @@ def config_driver():
     chrome_options = Options()
     chrome_options.add_argument('--headless')
 
-    driver_ = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
-
-    return driver_
+    driver = webdriver.Chrome(options=chrome_options, desired_capabilities=capability)
 
 
 def get_qrcode():
@@ -44,18 +47,22 @@ def get_qrcode():
         wait.until(ec.presence_of_element_located((By.CLASS_NAME, "qrcode-img")))
 
         time.sleep(2)
+    except:
+        print(f"{err_msg}cannot log in when scratching flv videos. "
+              "flv videos can also be scratched, but with lower quality")
+        return
 
-        # gets the html test of the log in page
-        login_html_text = driver.page_source
+    # gets the html test of the log in page
+    login_html_text = driver.page_source
+    login_soup = BeautifulSoup(login_html_text, "html.parser")
 
+    try:
         # gets the qr code
-        login_soup = BeautifulSoup(login_html_text, "html.parser")
-
         div_qrcode_img = login_soup.find("div", "qrcode-img")
         qrcode_img_url = div_qrcode_img.img["src"].split(',')[1:][0]
     except:
-        print("{}cannot log in when scratching flv videos. "
-              "flv videos can also be scratched, but with lower quality".format(err_msg))
+        print(f"{err_msg}cannot log in when scratching flv videos. "
+              "flv videos can also be scratched, but with lower quality")
         return
 
     # gets and saves the qr code for logging in
@@ -66,12 +73,14 @@ def get_qrcode():
 
 
 def wait_for_logging_in():
+    # displays the qr code
+    print("scan the qr code to log in for flv videos of higher qualities")
+    print("close the qr code window to retrieve flv videos of lower qualities without logging in")
     qrcode_img = mpimg.imread("qrcode.png")
 
     # waits for logging in
-    start = time.time()
-
     def close():
+        start = time.time()
         while re.compile(r"注册").search(driver.page_source) \
                 and time.time() - start <= 60:
             pass
@@ -89,26 +98,58 @@ def wait_for_logging_in():
 
 
 def log_in():
-    global driver
-    config_driver()
-
     # accesses the log in page
     login_page_url = "https://passport.bilibili.com/login"  # log in page
+
+    global driver
+    config_driver()
     driver.get(login_page_url)
 
+    # gets the qr code for logging in
     get_qrcode()
 
-    # displays the qr code
-    print("scan the qr code to log in for flv videos of higher qualities")
-    print("close the qr code window to retrieve flv videos of lower qualities without logging in")
-
+    # waits for the user's scanning
     wait_for_logging_in()
 
-    return driver
+
+def validate_p_num(p_num, total_p_num):
+    p_nums = p_num.split(',')
+
+    from_p_num = 1
+    to_p_num = 1
+    if len(p_nums) == 1:
+        from_p_num = p_nums[0]
+        to_p_num = p_nums[0]
+    elif len(p_nums) == 2:
+        from_p_num = p_nums[0]
+        to_p_num = p_nums[1]
+    else:
+        print(f"{err_msg}input: 'FROM_P_NUM, TO_P_NUM'")
+        exit(5)
+
+    try:
+        from_p_num = int(from_p_num)
+        to_p_num = int(to_p_num)
+    except:
+        print(f"{err_msg}p nums should be ints")
+        exit(6)
+
+    # checks if from_p_num < to_p_num
+    if not from_p_num <= to_p_num:
+        print(f"{err_msg}FROM-P-NUM greater than to_p_num")
+        exit(2)
+    # checks if from_p_num is greater than 0
+    if from_p_num <= 0:
+        from_p_num = 1
+    # checks if the to p num is out of range
+    if to_p_num > total_p_num:
+        to_p_num = total_p_num
+
+    return from_p_num, to_p_num
 
 
 def _make_dir(dir_path):
-    print("creating dir {} for storing videos".format(dir_path))
+    print(f"creating dir {dir_path} for storing videos")
 
     try:
         os.mkdir(dir_path)
@@ -132,8 +173,7 @@ class BilibiliVideo:
             r = requests.get(self.comment_url)
             r.raise_for_status()
         except:
-            print(
-                "{}cannot get total comment page num".format(err_msg))
+            print(f"{err_msg}cannot get total comment page num")
         else:
             page = json.loads(r.text)["data"]["page"]
             page_num = math.ceil(page["count"] / page["size"])
@@ -159,10 +199,11 @@ class BilibiliVideo:
             r = requests.get(self.url, headers=headers, timeout=60)
             html_text = r.text
         except:
-            print("{}cannot access to {}".format(err_msg, self.url))
+            print(f"{err_msg}cannot access to {self.url}")
             exit(1)
         else:
             soup = BeautifulSoup(html_text, "html.parser")
+            
             # gets window_initial_state dict
             window_initial_state_dict = BilibiliVideo._get_window_initial_state_dict(soup)
             # gets the pages dict
@@ -182,6 +223,7 @@ class BilibiliVideo:
 
             # gets cid list
             cid_list = [page["cid"] for page in pages]
+
 
             return av_num, video_title, ext, p_title_list, cid_list
 
@@ -211,7 +253,7 @@ class BilibiliVideoPage(BilibiliVideo):
 
                 return r.text
             except:
-                print("{}cannot get html text of p{}".format(err_msg, self.p_num))
+                print(f"{err_msg}cannot get html text of p{self.p_num}")
         else:
             # for flv videos with logging in
             try:
@@ -222,7 +264,7 @@ class BilibiliVideoPage(BilibiliVideo):
 
                 return driver.page_source
             except:
-                print("{}cannot get html text of p{}".format(err_msg, self.p_num))
+                print(f"{err_msg}cannot get html text of p{self.p_num}")
             finally:
                 driver_lock.release()
 
@@ -250,7 +292,7 @@ class BilibiliVideoPage(BilibiliVideo):
 
             return playinfo_dict
         except:
-            print("{}cannot get <script> with needed urls for p{}".format(err_msg, self.p_num))
+            print(f"{err_msg}cannot get <script> with needed urls for p{self.p_num}")
 
     def _get_m4s_urls(self):
         playinfo_dict = self._get_playinfo_dict(self._get_html_text())
@@ -337,8 +379,7 @@ class DownloadThread(threading.Thread):
 
             return audio_content, video_content
         except:
-            print(
-                "{}cannot download data in p{}".format(err_msg, self.bilibili_video_page.p_num))
+            print(f"{err_msg}cannot download data in p{self.bilibili_video_page.p_num}")
 
     def _get_flv_contents(self):
         print("downloading video \"{}\" in p{}".format(self.bilibili_video_page.p_title,
@@ -378,15 +419,11 @@ class DownloadThread(threading.Thread):
 
     def _combine(self, audio_path, video_path):
         # combines audio and video of the m4s file
-        mp4_file_name = os.path.join(self.dir_path, "p{}_{}.mp4".format(
-            self.bilibili_video_page.p_num, self.bilibili_video_page.p_title))
-        print("combining {} and {} into {}".format(os.path.basename(video_path),
-                                                   os.path.basename(audio_path),
-                                                   os.path.basename(mp4_file_name)))
+        mp4_file_name = join(self.dir_path, f"p{self.bilibili_video_page.p_num}_{self.bilibili_video_page.p_title}.mp4")
+        print(f"combining {basename(video_path)} and {basename(audio_path)} into {basename(mp4_file_name)}")
 
         subprocess.call(
-            ['ffmpeg -y -i "{}" -i "{}" -codec copy "{}" &> /dev/null'.format(video_path, audio_path,
-                                                                              mp4_file_name)],
+            [f'ffmpeg -y -i "{video_path}" -i "{audio_path}" -codec copy "{mp4_file_name}" &> /dev/null'],
             shell=True)
 
         # removes tmp m4s files
@@ -397,10 +434,10 @@ class DownloadThread(threading.Thread):
         print("saving audio and video (without sound) \"{}\" in p{}".format(self.bilibili_video_page.p_title,
                                                                             self.bilibili_video_page.p_num))
 
-        audio_path = os.path.join(self.dir_path, "{}_p{}_audio.m4s".format(
+        audio_path = join(self.dir_path, "{}_p{}_audio.m4s".format(
             self.bilibili_video_page.p_title,
             self.bilibili_video_page.p_num))
-        video_path = os.path.join(self.dir_path, "{}_p{}_video.m4s".format(
+        video_path = join(self.dir_path, "{}_p{}_video.m4s".format(
             self.bilibili_video_page.p_title,
             self.bilibili_video_page.p_num))
 
@@ -412,12 +449,12 @@ class DownloadThread(threading.Thread):
         self._combine(audio_path, video_path)
 
     def _concat(self, video_names, video_paths):
-        tmp_txt_path = os.path.join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
+        tmp_txt_path = join(self.dir_path, f"p{self.bilibili_video_page.p_num} files.txt")
         with open(tmp_txt_path, 'a') as f:
             for video_name in video_names:
                 f.write(f"file '{video_name}'\n")
 
-        video_path = os.path.join(self.dir_path,
+        video_path = join(self.dir_path,
                                   f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
         subprocess.call(
             [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{video_path}" &> /dev/null'],
@@ -435,7 +472,7 @@ class DownloadThread(threading.Thread):
 
         video_names = [f"p{self.bilibili_video_page.p_num}_{i}.flv"
                        for i, _ in self.bilibili_video_page.video_urls]
-        video_paths = [os.path.join(self.dir_path, video_name)
+        video_paths = [join(self.dir_path, video_name)
                        for video_name in video_names]
         for (i, content) in video_contents:
             with open(video_paths[i - 1], "wb") as f:
@@ -461,15 +498,13 @@ def create_threads(dir_path, bilibili_video, p_num_queue, url_queue):
     get_url_thread_list = []
     # threads for storing bilibili_video_page objs
     for i in range(6):
-        get_url_thread = GetUrlThread("get url thread {}".format(i + 1), bilibili_video,
-                                      p_num_queue,
-                                      url_queue)
+        get_url_thread = GetUrlThread(f"get url thread {i + 1}", bilibili_video, p_num_queue, url_queue)
         get_url_thread_list.append(get_url_thread)
 
     download_url_thread_list = []
     # threads for downloading audio (for m4s) and video urls
     for i in range(6):
-        download_url_thread = DownloadThread("download url thread {}".format(i + 1), dir_path, url_queue)
+        download_url_thread = DownloadThread(f"download url thread {i + 1}", dir_path, url_queue)
         download_url_thread_list.append(download_url_thread)
 
     return get_url_thread_list, download_url_thread_list
@@ -491,42 +526,6 @@ def join_threads(get_url_thread_list, download_url_thread_list):
         download_url_thread.join()
 
 
-def validate_p_num(p_num, total_p_num):
-    p_nums = p_num.split(',')
-
-    from_p_num = 1
-    to_p_num = 1
-    if len(p_nums) == 1:
-        from_p_num = p_nums[0]
-        to_p_num = p_nums[0]
-    elif len(p_nums) == 2:
-        from_p_num = p_nums[0]
-        to_p_num = p_nums[1]
-    else:
-        print(f"{err_msg}input: 'FROM_P_NUM, TO_P_NUM'")
-        exit(5)
-
-    try:
-        from_p_num = int(from_p_num)
-        to_p_num = int(to_p_num)
-    except:
-        print(f"{err_msg}p nums should be ints")
-        exit(6)
-
-    # checks if from_p_num < to_p_num
-    if not from_p_num <= to_p_num:
-        print("{}FROM-P-NUM greater than to_p_num".format(err_msg))
-        exit(2)
-    # checks if from_p_num is greater than 0
-    if from_p_num <= 0:
-        from_p_num = 1
-    # checks if the to p num is out of range
-    if to_p_num > total_p_num:
-        to_p_num = total_p_num
-
-    return from_p_num, to_p_num
-
-
 def bilibili_video_spider(bv_num, p_num, root_dir):
     bilibili_video = BilibiliVideo(bv_num=bv_num)
 
@@ -534,13 +533,14 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     global headers
     headers = {
         'Referer': bilibili_video.url,
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.88 '
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 '
                       'Safari/537.36',
     }
 
     # simulates logging in if the videos are flv
     global driver
-    driver = log_in() if bilibili_video.ext == "flv" else None
+    if bilibili_video.ext == "flv":
+        log_in()
 
     # Validates if the from p num and to p num are valid.
     from_p_num, to_p_num = validate_p_num(p_num, bilibili_video.total_p_num)
@@ -548,10 +548,10 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
     global total_p_num_to_be_scratched
     total_p_num_to_be_scratched = to_p_num - from_p_num + 1
 
-    print("ready to scratch videos from {}: {}".format(bilibili_video.bv_num, bilibili_video.video_title))
+    print(f"ready to scratch videos from {bilibili_video.bv_num}: {bilibili_video.video_title}")
 
     # makes a dir for storing the videos
-    dir_path = os.path.join(root_dir, bilibili_video.video_title)
+    dir_path = join(root_dir, bilibili_video.video_title)
     _make_dir(dir_path)
 
     # creates a queue for storing p numbers,
