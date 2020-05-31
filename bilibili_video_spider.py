@@ -203,7 +203,7 @@ class BilibiliVideo:
             exit(1)
         else:
             soup = BeautifulSoup(html_text, "html.parser")
-            
+
             # gets window_initial_state dict
             window_initial_state_dict = BilibiliVideo._get_window_initial_state_dict(soup)
             # gets the pages dict
@@ -223,7 +223,6 @@ class BilibiliVideo:
 
             # gets cid list
             cid_list = [page["cid"] for page in pages]
-
 
             return av_num, video_title, ext, p_title_list, cid_list
 
@@ -455,7 +454,7 @@ class DownloadThread(threading.Thread):
                 f.write(f"file '{video_name}'\n")
 
         video_path = join(self.dir_path,
-                                  f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
+                          f"{self.bilibili_video_page.p_title}_p{self.bilibili_video_page.p_num}.flv")
         subprocess.call(
             [f'ffmpeg -f concat -i "{tmp_txt_path}" -c copy "{video_path}" &> /dev/null'],
             shell=True
@@ -531,11 +530,7 @@ def bilibili_video_spider(bv_num, p_num, root_dir):
 
     # generates the headers
     global headers
-    headers = {
-        'Referer': bilibili_video.url,
-        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 '
-                      'Safari/537.36',
-    }
+    headers['Referer'] = bilibili_video.url
 
     # simulates logging in if the videos are flv
     global driver
@@ -580,7 +575,8 @@ if __name__ == '__main__':
     driver_lock = threading.Lock()
     p_num_scratched_lock = threading.Lock()
 
-    headers = None
+    headers = {'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                             'Chrome/83.0.4103.61 Safari/537.36'}
     driver = None
 
     total_p_num_to_be_scratched = 0
