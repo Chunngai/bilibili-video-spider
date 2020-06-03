@@ -165,12 +165,15 @@ class BilibiliVideo:
         self.av_num, self.video_title, self.ext, self.p_title_list, self.cid_list = self._get_videos_info()
         self.total_p_num = len(self.p_title_list)
 
-        self.comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
         self.total_comment_page_num = self._get_comments_info()
+        self.comment_urls = [f"https://api.bilibili.com/x/v2/reply?pn={pn}&type=1&oid={self.av_num}&sort=2"
+                             for pn in range(1, self.total_comment_page_num + 1)]
 
     def _get_comments_info(self):
         try:
-            r = requests.get(self.comment_url)
+            comment_url = f"https://api.bilibili.com/x/v2/reply?pn=1&type=1&oid={self.av_num}&sort=2"
+
+            r = requests.get(comment_url)
             r.raise_for_status()
         except:
             print(f"{err_msg}cannot get total comment page num")
